@@ -63,7 +63,7 @@
 
 
 
-  <meta name="keywords" content="Hexo, NexT" />
+  <meta name="keywords" content="Kubernetes," />
 
 
 
@@ -74,12 +74,17 @@
 
 
 
-<meta property="og:type" content="website">
-<meta property="og:title" content="蚂蚁搬家H">
-<meta property="og:url" content="https://antmoveh.github.io/index.html">
+<meta name="description" content="前言 Kubernetes服务组件包括kube-apiserver kube-controller-manager kube-scheduler kubelet ，除kubelet外其他组件均已容器化运行，使用命令kubectl get pods -n kube-system可观察到运行的容器组件 本篇文章主要讲述如何在容器中运行kubelet  Kubelet容器化部署  kubelet容器化部">
+<meta property="og:type" content="article">
+<meta property="og:title" content="kubeletRunInContainer">
+<meta property="og:url" content="https://antmoveh.github.io/2021/03/23/KubeletRunInContainer/index.html">
 <meta property="og:site_name" content="蚂蚁搬家H">
+<meta property="og:description" content="前言 Kubernetes服务组件包括kube-apiserver kube-controller-manager kube-scheduler kubelet ，除kubelet外其他组件均已容器化运行，使用命令kubectl get pods -n kube-system可观察到运行的容器组件 本篇文章主要讲述如何在容器中运行kubelet  Kubelet容器化部署  kubelet容器化部">
 <meta property="og:locale">
+<meta property="article:published_time" content="2021-03-23T01:56:34.000Z">
+<meta property="article:modified_time" content="2021-03-23T03:25:22.649Z">
 <meta property="article:author" content="antmoveh">
+<meta property="article:tag" content="Kubernetes">
 <meta name="twitter:card" content="summary">
 
 
@@ -120,13 +125,13 @@
 
 
 
-  <link rel="canonical" href="https://antmoveh.github.io/"/>
+  <link rel="canonical" href="https://antmoveh.github.io/2021/03/23/KubeletRunInContainer/"/>
 
 
 
 
 
-  <title>蚂蚁搬家H</title>
+  <title>kubeletRunInContainer | 蚂蚁搬家H</title>
   
 
 
@@ -145,8 +150,7 @@
     
   
 
-  <div class="container sidebar-position-left 
-  page-home">
+  <div class="container sidebar-position-left page-post-detail">
     <div class="headband"></div>
 
     <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
@@ -264,9 +268,8 @@
           <div id="content" class="content">
             
 
-  <section id="posts" class="posts-expand">
+  <div id="posts" class="posts-expand">
     
-      
 
   
 
@@ -296,9 +299,7 @@
 
         
         
-          <h1 class="post-title" itemprop="name headline">
-                
-                <a class="post-title-link" href="/2021/03/23/KubeletRunInContainer/" itemprop="url">kubeletRunInContainer</a></h1>
+          <h1 class="post-title" itemprop="name headline">kubeletRunInContainer</h1>
         
 
         <div class="post-meta">
@@ -352,6 +353,11 @@
           
 
           
+            <span class="post-meta-divider">|</span>
+            <span class="page-pv"><i class="fa fa-file-o"></i> 阅读数
+            <span class="busuanzi-value" id="busuanzi_value_page_pv" ></span>
+            </span>
+          
 
           
             <div class="post-wordcount">
@@ -401,20 +407,63 @@
       
 
       
-        
-          
-          前言
-Kubernetes服务组件包括kube-apiserver kube-controller-manager kube-scheduler kubelet ，除kubelet外其他组件均已容器化运行，使用命令kubectl get pods -n kube-system可观察到运行的容器组件
+        <h4 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h4><ul>
+<li>Kubernetes服务组件包括<code>kube-apiserver kube-controller-manager kube-scheduler kubelet</code> ，除kubelet外其他组件均已容器化运行，使用命令<code>kubectl get pods -n kube-system</code>可观察到运行的容器组件</li>
+<li>本篇文章主要讲述如何在容器中运行kubelet</li>
+</ul>
+<h4 id="Kubelet容器化部署"><a href="#Kubelet容器化部署" class="headerlink" title="Kubelet容器化部署"></a>Kubelet容器化部署</h4><blockquote>
+<ul>
+<li>kubelet容器化部署并不鲜见，可以搜索到各种相关示例如：<a target="_blank" rel="noopener" href="https://github.com/kubernetes-retired/kubernetes-anywhere/blob/master/phase2/ignition/vanilla/kubelet.service">https://github.com/kubernetes-retired/kubernetes-anywhere/blob/master/phase2/ignition/vanilla/kubelet.service</a></li>
+</ul>
+</blockquote>
+<h5 id="选择kubelet容器"><a href="#选择kubelet容器" class="headerlink" title="选择kubelet容器"></a>选择kubelet容器</h5><ul>
+<li><p>Kubernetes官方镜像<code>googlecontainersmirrors/hyperkube-amd64</code>已经将各个组件的二进制文件收集到镜像中，上述仓库为谷歌镜像仓库，原镜像地址为<code>gcr.io/google-containers/hyperkube-amd64</code></p>
+</li>
+<li><p>从<code>https://console.cloud.google.com/gcr/images/google-containers</code> 搜索<code>hyperkube-amd64</code>可获取原镜像地址</p>
+</li>
+<li><p>Kubernetes 1.19版本以后，不在构建<code>hyperkube-adm64</code>超级镜像，稍后会介绍构建我们自己的kubelet</p>
+</li>
+</ul>
+<h5 id="Master节点部署"><a href="#Master节点部署" class="headerlink" title="Master节点部署"></a>Master节点部署</h5><ul>
+<li><p>Kubernetes Master节点使用kubeadm工具快速部署：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubeadm init --kubernetes-version=v1.19.4 --apiserver-advertise-address=192.168.56.120 --pod-network-cidr=10.244.0.0/16</span><br></pre></td></tr></table></figure>
+<h5 id="Worker节点"><a href="#Worker节点" class="headerlink" title="Worker节点"></a>Worker节点</h5></li>
+<li><p>Kubelet正常启动，主要有以下几个关键点</p>
+<ul>
+<li>生成客户端证书</li>
+<li>创建Kubelet配置文件</li>
+<li>启动Kubelet</li>
+</ul>
+</li>
+<li><p>生成客户端证书</p>
+<ul>
+<li><p>将Master节点 目录<code>/etc/kubernetes/pki</code>下根证书<code>ca.crt ca.key</code>复制到Worker节点 <code>/etc/kubernetes</code>目录下，并将<code>ca.crt</code>复制到<code>/etc/kubernetes/pki</code>目录下</p>
+</li>
+<li><p>使用如下命令创建客户端证书</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubeadm init phase kubeconfig kubelet --cert-dir=/etc/kubernetes --kubeconfig-dir=/etc/kubernetes --apiserver-advertise-address=192.168.56.120 --kubernetes-version=v1.19.4</span><br></pre></td></tr></table></figure></li>
+</ul>
+</li>
+<li><p>创建配置文件</p>
+<ul>
+<li><p>在<code>/etc/kubernetes</code>目录下创建kubelet_settings.yml，内容如下</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">kubelet.config.k8s.io/v1beta1</span></span><br><span class="line"><span class="attr">authentication:</span></span><br><span class="line">  <span class="attr">anonymous:</span></span><br><span class="line">    <span class="attr">enabled:</span> <span class="literal">false</span></span><br><span class="line">  <span class="attr">webhook:</span></span><br><span class="line">    <span class="attr">cacheTTL:</span> <span class="string">0s</span></span><br><span class="line">    <span class="attr">enabled:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">x509:</span></span><br><span class="line">    <span class="attr">clientCAFile:</span> <span class="string">/etc/kubernetes/pki/ca.crt</span></span><br><span class="line"><span class="attr">authorization:</span></span><br><span class="line">  <span class="attr">mode:</span> <span class="string">Webhook</span></span><br><span class="line">  <span class="attr">webhook:</span></span><br><span class="line">    <span class="attr">cacheAuthorizedTTL:</span> <span class="string">0s</span></span><br><span class="line">    <span class="attr">cacheUnauthorizedTTL:</span> <span class="string">0s</span></span><br><span class="line"><span class="attr">cgroupDriver:</span> <span class="string">systemd</span></span><br><span class="line"><span class="attr">clusterDNS:</span></span><br><span class="line"><span class="bullet">-</span> <span class="number">10.96</span><span class="number">.0</span><span class="number">.10</span></span><br><span class="line"><span class="attr">clusterDomain:</span> <span class="string">cluster.local</span></span><br><span class="line"><span class="attr">cpuManagerReconcilePeriod:</span> <span class="string">0s</span></span><br><span class="line"><span class="attr">evictionPressureTransitionPeriod:</span> <span class="string">0s</span></span><br><span class="line"><span class="attr">fileCheckFrequency:</span> <span class="string">0s</span></span><br><span class="line"><span class="attr">healthzBindAddress:</span> <span class="number">127.0</span><span class="number">.0</span><span class="number">.1</span></span><br><span class="line"><span class="attr">healthzPort:</span> <span class="number">10248</span></span><br><span class="line"><span class="attr">httpCheckFrequency:</span> <span class="string">0s</span></span><br><span class="line"><span class="attr">imageMinimumGCAge:</span> <span class="string">0s</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">KubeletConfiguration</span></span><br><span class="line"><span class="attr">logging:</span> &#123;&#125;</span><br><span class="line"><span class="attr">nodeStatusReportFrequency:</span> <span class="string">0s</span></span><br><span class="line"><span class="attr">nodeStatusUpdateFrequency:</span> <span class="string">0s</span></span><br><span class="line"><span class="attr">rotateCertificates:</span> <span class="literal">true</span></span><br><span class="line"><span class="attr">runtimeRequestTimeout:</span> <span class="string">0s</span></span><br><span class="line"><span class="attr">staticPodPath:</span> <span class="string">/etc/kubernetes/manifests</span></span><br><span class="line"><span class="attr">streamingConnectionIdleTimeout:</span> <span class="string">0s</span></span><br><span class="line"><span class="attr">syncFrequency:</span> <span class="string">0s</span></span><br><span class="line"><span class="attr">volumeStatsAggPeriod:</span> <span class="string">0s</span> </span><br></pre></td></tr></table></figure></li>
+<li><p>当然也可以定制化配置文件内容</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="attr">kind:</span> <span class="string">KubeletConfiguration</span></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">kubelet.config.k8s.io/v1beta1</span></span><br><span class="line"><span class="attr">address:</span> <span class="number">0.0</span><span class="number">.0</span><span class="number">.0</span></span><br><span class="line"><span class="attr">authentication:</span></span><br><span class="line">  <span class="attr">anonymous:</span></span><br><span class="line">    <span class="attr">enabled:</span> <span class="literal">false</span></span><br><span class="line">  <span class="attr">webhook:</span></span><br><span class="line">    <span class="attr">cacheTTL:</span> <span class="string">2m0s</span></span><br><span class="line">    <span class="attr">enabled:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">x509:</span></span><br><span class="line">    <span class="attr">clientCAFile:</span> <span class="string">/etc/kubernetes/pki/ca.crt</span></span><br><span class="line"><span class="attr">authorization:</span></span><br><span class="line">  <span class="attr">mode:</span> <span class="string">Webhook</span></span><br><span class="line">  <span class="attr">webhook:</span></span><br><span class="line">    <span class="attr">cacheAuthorizedTTL:</span> <span class="string">5m0s</span></span><br><span class="line">    <span class="attr">cacheUnauthorizedTTL:</span> <span class="string">30s</span></span><br><span class="line"><span class="attr">cgroupDriver:</span> <span class="string">systemd</span></span><br><span class="line"><span class="attr">clusterDNS:</span></span><br><span class="line"><span class="bullet">-</span> <span class="number">10.96</span><span class="number">.0</span><span class="number">.10</span></span><br><span class="line"><span class="attr">clusterDomain:</span> <span class="string">cluster.local</span></span><br><span class="line"><span class="attr">configMapAndSecretChangeDetectionStrategy:</span> <span class="string">Watch</span></span><br><span class="line"><span class="attr">containerLogMaxFiles:</span> <span class="number">5</span></span><br><span class="line"><span class="attr">containerLogMaxSize:</span> <span class="string">10Mi</span></span><br><span class="line"><span class="attr">contentType:</span> <span class="string">application/vnd.kubernetes.protobuf</span></span><br><span class="line"><span class="attr">cpuCFSQuota:</span> <span class="literal">true</span></span><br><span class="line"><span class="attr">cpuCFSQuotaPeriod:</span> <span class="string">100ms</span></span><br><span class="line"><span class="attr">cpuManagerPolicy:</span> <span class="string">none</span></span><br><span class="line"><span class="attr">cpuManagerReconcilePeriod:</span> <span class="string">10s</span></span><br><span class="line"><span class="attr">enableControllerAttachDetach:</span> <span class="literal">true</span></span><br><span class="line"><span class="attr">enableDebuggingHandlers:</span> <span class="literal">true</span></span><br><span class="line"><span class="attr">eventBurst:</span> <span class="number">10</span></span><br><span class="line"><span class="attr">eventRecordQPS:</span> <span class="number">5</span></span><br><span class="line"><span class="attr">evictionHard:</span></span><br><span class="line">  <span class="attr">imagefs.available:</span> <span class="number">15</span><span class="string">%</span></span><br><span class="line">  <span class="attr">memory.available:</span> <span class="string">200Mi</span></span><br><span class="line">  <span class="attr">nodefs.available:</span> <span class="number">10</span><span class="string">%</span></span><br><span class="line">  <span class="attr">nodefs.inodesFree:</span> <span class="number">10</span><span class="string">%</span></span><br><span class="line"><span class="attr">evictionPressureTransitionPeriod:</span> <span class="string">5m0s</span></span><br><span class="line"><span class="attr">failSwapOn:</span> <span class="literal">true</span></span><br><span class="line"><span class="attr">fileCheckFrequency:</span> <span class="string">20s</span></span><br><span class="line"><span class="attr">hairpinMode:</span> <span class="string">promiscuous-bridge</span></span><br><span class="line"><span class="attr">healthzBindAddress:</span> <span class="number">0.0</span><span class="number">.0</span><span class="number">.0</span></span><br><span class="line"><span class="attr">healthzPort:</span> <span class="number">10248</span></span><br><span class="line"><span class="attr">httpCheckFrequency:</span> <span class="string">20s</span></span><br><span class="line"><span class="attr">imageGCHighThresholdPercent:</span> <span class="number">85</span></span><br><span class="line"><span class="attr">imageGCLowThresholdPercent:</span> <span class="number">80</span></span><br><span class="line"><span class="attr">imageMinimumGCAge:</span> <span class="string">2m0s</span></span><br><span class="line"><span class="attr">iptablesDropBit:</span> <span class="number">15</span></span><br><span class="line"><span class="attr">iptablesMasqueradeBit:</span> <span class="number">14</span></span><br><span class="line"><span class="attr">kubeAPIBurst:</span> <span class="number">10</span></span><br><span class="line"><span class="attr">kubeAPIQPS:</span> <span class="number">5</span></span><br><span class="line"><span class="attr">makeIPTablesUtilChains:</span> <span class="literal">true</span></span><br><span class="line"><span class="attr">maxOpenFiles:</span> <span class="number">1000000</span></span><br><span class="line"><span class="attr">maxPods:</span> <span class="number">110</span> </span><br><span class="line"><span class="attr">nodeLeaseDurationSeconds:</span> <span class="number">40</span></span><br><span class="line"><span class="attr">nodeStatusReportFrequency:</span> <span class="string">1m0s</span></span><br><span class="line"><span class="attr">nodeStatusUpdateFrequency:</span> <span class="string">10s</span></span><br><span class="line"><span class="attr">oomScoreAdj:</span> <span class="number">-999</span></span><br><span class="line"><span class="attr">podPidsLimit:</span> <span class="number">-1</span></span><br><span class="line"><span class="attr">port:</span> <span class="number">10250</span></span><br><span class="line"><span class="attr">registryBurst:</span> <span class="number">10</span></span><br><span class="line"><span class="attr">registryPullQPS:</span> <span class="number">5</span></span><br><span class="line"><span class="attr">resolvConf:</span> <span class="string">/etc/resolv.conf</span></span><br><span class="line"><span class="attr">rotateCertificates:</span> <span class="literal">true</span></span><br><span class="line"><span class="attr">runtimeRequestTimeout:</span> <span class="string">2m0s</span></span><br><span class="line"><span class="attr">serializeImagePulls:</span> <span class="literal">false</span></span><br><span class="line"><span class="attr">staticPodPath:</span> <span class="string">/etc/kubernetes/manifests</span></span><br><span class="line"><span class="attr">streamingConnectionIdleTimeout:</span> <span class="string">4h0m0s</span></span><br><span class="line"><span class="attr">syncFrequency:</span> <span class="string">1m0s</span></span><br><span class="line"><span class="attr">volumeStatsAggPeriod:</span> <span class="string">1m0s</span></span><br></pre></td></tr></table></figure></li>
+</ul>
+</li>
+<li><p>启动Kubelet</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">docker run -d --name=kubelet --net=host --pid=host --privileged \ </span><br><span class="line">-v /dev:/dev -v /sys:/sys:ro -v /var/run:/var/run:rw \</span><br><span class="line">-v /var/lib/calico:/var/lib/calico:ro \ </span><br><span class="line">-v /var/lib/docker/:/var/lib/docker:rw \ </span><br><span class="line">-v /var/lib/kubelet/:/var/lib/kubelet:shared \ </span><br><span class="line">-v /var/log:/var/log:shared -v /opt/cni/bin:/opt/cni/bin \</span><br><span class="line">-v /etc/cni/:/etc/cni -v /etc/kubernetes:/etc/kubernetes:ro \</span><br><span class="line">googlecontainersmirrors/hyperkube-amd64:v1.19.0-alpha.0 \</span><br><span class="line">kubelet --hostname-override=192.168.56.121 \</span><br><span class="line">--config=/etc/kubernetes/kubelet_settings.yml \ </span><br><span class="line">--kubeconfig=/etc/kubernetes/kubelet.conf \</span><br><span class="line">--register-node=true --network-plugin=cni</span><br></pre></td></tr></table></figure>
+<h4 id="构建Kubelet镜像"><a href="#构建Kubelet镜像" class="headerlink" title="构建Kubelet镜像"></a>构建Kubelet镜像</h4></li>
+<li><p>在Kubernetes 1.19版本之后便不再提供<code>googlecontainersmirrors/hyperkube-amd64</code>镜像，可使用如下<code>Dockerfile</code>构建镜像</p>
+<figure class="highlight dockerfile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">FROM</span> antmoveh/debian-hyperkube-base-amd64:v1.<span class="number">1.3</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">ARG</span> version=v1.<span class="number">20.4</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">ADD</span><span class="bash"> https://storage.googleapis.com/kubernetes-release/release/<span class="variable">$&#123;version&#125;</span>/bin/linux/amd64/kubelet /usr/<span class="built_in">local</span>/bin</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">RUN</span><span class="bash"> chmod +x /usr/<span class="built_in">local</span>/bin/kubelet</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">CMD</span><span class="bash"> [<span class="string">&quot;kubelet&quot;</span>]</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># docker build --build-arg version=v1.20.4 -t kubectl:tag .</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>如果有将<code>kube-apiserver</code>等组件加入容器的需求，可以依次添加二进制文件到镜像内</li>
+<li><code>antmoveh/debian-hyperkube-base-amd64:v1.1.3</code>镜像为<code>k8s.gcr.io/build-image/debian-hyperkube-base-amd64:v1.1.3</code></li>
+<li>参考hyperkube镜像构建<a target="_blank" rel="noopener" href="https://github.com/kubernetes/kubernetes/tree/release-1.18/cluster/images/hyperkube">https://github.com/kubernetes/kubernetes/tree/release-1.18/cluster/images/hyperkube</a></li>
+</ul>
+</li>
+</ul>
 
-          ...
-          <!--noindex-->
-          <div class="post-button text-center">
-            <a class="btn" href="/2021/03/23/KubeletRunInContainer/#more" rel="contents">
-              阅读全文 &raquo;
-            </a>
-          </div>
-          <!--/noindex-->
-        
       
     </div>
     
@@ -429,398 +478,51 @@ Kubernetes服务组件包括kube-apiserver kube-controller-manager kube-schedule
 
     <footer class="post-footer">
       
-
-      
-
-      
-
-      
-      
-        <div class="post-eof"></div>
-      
-    </footer>
-  </div>
-  
-  
-  
-  </article>
-
-
-			<!-- 首页显示标签  -->
-		    
-		      <div class="post-tags">
-		        
-		            <a href="/tags/Kubernetes/" rel="tag"><i class="fa fa-tag"></i> Kubernetes</a>
-		        
-		      </div>
-		    
-			<!-- 首页显示标签 end -->	   	  
-    
-      
-
-  
-
-  
-  
-  
-
-  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
-  
-  
-  
-  <div class="post-block">
-    <link itemprop="mainEntityOfPage" href="https://antmoveh.github.io/2021/03/07/Kubernetes%E8%87%AA%E5%AE%9A%E4%B9%89%E8%B0%83%E5%BA%A6%E5%99%A8%E5%BC%80%E5%8F%91/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="name" content="">
-      <meta itemprop="description" content="">
-      <meta itemprop="image" content="/images/avatar.gif">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="蚂蚁搬家H">
-    </span>
-
-    
-      <header class="post-header">
-
-        
-        
-          <h1 class="post-title" itemprop="name headline">
-                
-                <a class="post-title-link" href="/2021/03/07/Kubernetes%E8%87%AA%E5%AE%9A%E4%B9%89%E8%B0%83%E5%BA%A6%E5%99%A8%E5%BC%80%E5%8F%91/" itemprop="url">Kubernetes自定义调度器开发</a></h1>
-        
-
-        <div class="post-meta">
-          <span class="post-time">
-            
-              <span class="post-meta-item-icon">
-                <i class="fa fa-calendar-o"></i>
-              </span>
-              
-                <span class="post-meta-item-text">发表于</span>
-              
-              <time title="创建于" itemprop="dateCreated datePublished" datetime="2021-03-07T18:55:37+08:00">
-                2021-03-07
-              </time>
-            
-
-            
-
-            
-          </span>
-
+        <div class="post-tags">
           
-            <span class="post-category" >
-            
-              <span class="post-meta-divider">|</span>
-            
-              <span class="post-meta-item-icon">
-                <i class="fa fa-folder-o"></i>
-              </span>
-              
-                <span class="post-meta-item-text">分类于</span>
-              
-              
-                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-                  <a href="/categories/Kubernetes/" itemprop="url" rel="index">
-                    <span itemprop="name">Kubernetes</span>
-                  </a>
-                </span>
-
-                
-                
-              
-            </span>
+            <a href="/tags/Kubernetes/" rel="tag"># Kubernetes</a>
           
-
-          
-            
-          
-
-          
-          
-
-          
-
-          
-            <div class="post-wordcount">
-              
-                
-                <span class="post-meta-item-icon">
-                  <i class="fa fa-file-word-o"></i>
-                </span>
-                
-                  <span class="post-meta-item-text">字数统计&#58;</span>
-                
-                <span title="字数统计">
-                  5.5k
-                </span>
-              
-
-              
-                <span class="post-meta-divider">|</span>
-              
-
-              
-                <span class="post-meta-item-icon">
-                  <i class="fa fa-clock-o"></i>
-                </span>
-                
-                  <span class="post-meta-item-text">阅读时长 &asymp;</span>
-                
-                <span title="阅读时长">
-                  25
-                </span>
-              
-            </div>
-          
-
-          
-
         </div>
-      </header>
-    
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
       
 
       
+      
+        <div class="post-widgets">
+        
+
+        
+
         
           
-          简述
-kube-scheduler 是 kubernetes 的核心组件之一，主要负责整个集群资源的调度功能，根据特定的调度算法和策略，将 Pod 调度到最优的工作节点上面去，从而更加合理、更加充分的利用集群的资源，这也是我们选择使用 kubernetes 一个非常重要的理由。如果一门新的技术不能帮
-          ...
-          <!--noindex-->
-          <div class="post-button text-center">
-            <a class="btn" href="/2021/03/07/Kubernetes%E8%87%AA%E5%AE%9A%E4%B9%89%E8%B0%83%E5%BA%A6%E5%99%A8%E5%BC%80%E5%8F%91/#more" rel="contents">
-              阅读全文 &raquo;
-            </a>
-          </div>
-          <!--/noindex-->
-        
-      
-    </div>
-    
-    
-    
-
-    
-
-    
-
-    
-
-    <footer class="post-footer">
-      
-
-      
-
-      
-
-      
-      
-        <div class="post-eof"></div>
-      
-    </footer>
-  </div>
-  
-  
-  
-  </article>
-
-
-			<!-- 首页显示标签  -->
-		    
-		      <div class="post-tags">
-		        
-		            <a href="/tags/Kubernetes/" rel="tag"><i class="fa fa-tag"></i> Kubernetes</a>
-		        
-		            <a href="/tags/Scheduler/" rel="tag"><i class="fa fa-tag"></i> Scheduler</a>
-		        
-		      </div>
-		    
-			<!-- 首页显示标签 end -->	   	  
-    
-      
-
-  
-
-  
-  
-  
-
-  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
-  
-  
-  
-  <div class="post-block">
-    <link itemprop="mainEntityOfPage" href="https://antmoveh.github.io/2021/01/17/WinVagrantKubernetesCluster/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="name" content="">
-      <meta itemprop="description" content="">
-      <meta itemprop="image" content="/images/avatar.gif">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="蚂蚁搬家H">
-    </span>
-
-    
-      <header class="post-header">
-
-        
-        
-          <h1 class="post-title" itemprop="name headline">
-                
-                <a class="post-title-link" href="/2021/01/17/WinVagrantKubernetesCluster/" itemprop="url">Vagrant快速搭建Kubernetes集群</a></h1>
-        
-
-        <div class="post-meta">
-          <span class="post-time">
-            
-              <span class="post-meta-item-icon">
-                <i class="fa fa-calendar-o"></i>
-              </span>
-              
-                <span class="post-meta-item-text">发表于</span>
-              
-              <time title="创建于" itemprop="dateCreated datePublished" datetime="2021-01-17T18:05:40+08:00">
-                2021-01-17
-              </time>
-            
-
-            
-
-            
-          </span>
-
-          
-            <span class="post-category" >
-            
-              <span class="post-meta-divider">|</span>
-            
-              <span class="post-meta-item-icon">
-                <i class="fa fa-folder-o"></i>
-              </span>
-              
-                <span class="post-meta-item-text">分类于</span>
-              
-              
-                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-                  <a href="/categories/Kubernetes/" itemprop="url" rel="index">
-                    <span itemprop="name">Kubernetes</span>
-                  </a>
-                </span>
-
-                
-                
-              
+          <div id="needsharebutton-postbottom">
+            <span class="btn">
+              <i class="fa fa-share-alt" aria-hidden="true"></i>
             </span>
-          
-
-          
-            
-          
-
-          
-          
-
-          
-
-          
-            <div class="post-wordcount">
-              
-                
-                <span class="post-meta-item-icon">
-                  <i class="fa fa-file-word-o"></i>
-                </span>
-                
-                  <span class="post-meta-item-text">字数统计&#58;</span>
-                
-                <span title="字数统计">
-                  4.1k
-                </span>
-              
-
-              
-                <span class="post-meta-divider">|</span>
-              
-
-              
-                <span class="post-meta-item-icon">
-                  <i class="fa fa-clock-o"></i>
-                </span>
-                
-                  <span class="post-meta-item-text">阅读时长 &asymp;</span>
-                
-                <span title="阅读时长">
-                  21
-                </span>
-              
-            </div>
-          
-
-          
-
-        </div>
-      </header>
-    
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-      
-
-      
-        
-          <h4 id="目标"><a href="#目标" class="headerlink" title="目标"></a>目标</h4><ul>
-<li><p>自动化搭建Kubernetes集群环境</p>
-</li>
-<li><p>每个集群节点挂载1..N块磁盘</p>
-</li>
-<li><p>能够快速搭建完成</p>
-</li>
-<li><p>windows 10下完成集群搭建</p>
-          <!--noindex-->
-          <div class="post-button text-center">
-            <a class="btn" href="/2021/01/17/WinVagrantKubernetesCluster/#more" rel="contents">
-              阅读全文 &raquo;
-            </a>
           </div>
-          <!--/noindex-->
         
+        </div>
       
-    </div>
-    
-    
-    
-
-    
-
-    
-
-    
-
-    <footer class="post-footer">
       
 
       
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2021/03/07/Kubernetes%E8%87%AA%E5%AE%9A%E4%B9%89%E8%B0%83%E5%BA%A6%E5%99%A8%E5%BC%80%E5%8F%91/" rel="next" title="Kubernetes自定义调度器开发">
+                <i class="fa fa-chevron-left"></i> Kubernetes自定义调度器开发
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+          </div>
+        </div>
+      
 
       
-
-      
-      
-        <div class="post-eof"></div>
       
     </footer>
   </div>
@@ -830,25 +532,11 @@ kube-scheduler 是 kubernetes 的核心组件之一，主要负责整个集群�
   </article>
 
 
-			<!-- 首页显示标签  -->
-		    
-		      <div class="post-tags">
-		        
-		            <a href="/tags/Vagrant/" rel="tag"><i class="fa fa-tag"></i> Vagrant</a>
-		        
-		            <a href="/tags/Kubernetes/" rel="tag"><i class="fa fa-tag"></i> Kubernetes</a>
-		        
-		            <a href="/tags/Windows/" rel="tag"><i class="fa fa-tag"></i> Windows</a>
-		        
-		            <a href="/tags/Disk/" rel="tag"><i class="fa fa-tag"></i> Disk</a>
-		        
-		      </div>
-		    
-			<!-- 首页显示标签 end -->	   	  
-    
-  </section>
 
-  
+    <div class="post-spread">
+      
+    </div>
+  </div>
 
 
           </div>
@@ -856,6 +544,10 @@ kube-scheduler 是 kubernetes 的核心组件之一，主要负责整个集群�
 
 
           
+
+  
+
+
 
         </div>
         
@@ -876,8 +568,17 @@ kube-scheduler 是 kubernetes 的核心组件之一，主要负责整个集群�
       
 
       
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
 
-      <section class="site-overview-wrap sidebar-panel sidebar-panel-active">
+      <section class="site-overview-wrap sidebar-panel">
         <div class="site-overview">
           <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
             
@@ -957,6 +658,22 @@ kube-scheduler 是 kubernetes 的核心组件之一，主要负责整个集群�
         </div>
       </section>
 
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%89%8D%E8%A8%80"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Kubelet%E5%AE%B9%E5%99%A8%E5%8C%96%E9%83%A8%E7%BD%B2"><span class="nav-number">2.</span> <span class="nav-text">Kubelet容器化部署</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#%E9%80%89%E6%8B%A9kubelet%E5%AE%B9%E5%99%A8"><span class="nav-number">2.1.</span> <span class="nav-text">选择kubelet容器</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#Master%E8%8A%82%E7%82%B9%E9%83%A8%E7%BD%B2"><span class="nav-number">2.2.</span> <span class="nav-text">Master节点部署</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#Worker%E8%8A%82%E7%82%B9"><span class="nav-number">2.3.</span> <span class="nav-text">Worker节点</span></a></li></ol></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%9E%84%E5%BB%BAKubelet%E9%95%9C%E5%83%8F"><span class="nav-number">3.</span> <span class="nav-text">构建Kubelet镜像</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
       
 
       
@@ -1132,6 +849,10 @@ kube-scheduler 是 kubernetes 的核心组件之一，主要负责整个集群�
   
 
   
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
 
   
 
