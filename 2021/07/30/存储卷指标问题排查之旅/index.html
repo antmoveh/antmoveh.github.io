@@ -1,0 +1,1501 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang="zh-Hans">
+<head>
+  <meta charset="UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform" />
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css" />
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css" />
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css" />
+
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon.jpg?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon.jpg?v=5.1.4">
+
+
+
+
+
+
+  <meta name="keywords" content="Kubernetes,storageclass," />
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="背景： 最近有小伙伴反映，使用存储驱动（比如：NFS-CSI、Ceph-CSI）创建的存储卷，在Grafana看不到其容量指标，并且Prometheus中也收集不到卷容量、使用量等指标 据笔者所知Grafana内置了kubernetes&#x2F;Persistent Volumes指标模板，并且其指标数据来源于kubelet；在此之前笔者并未对kubelet metrics接口进行深入研究过，借此机会探究">
+<meta property="og:type" content="article">
+<meta property="og:title" content="存储卷指标问题排查之旅">
+<meta property="og:url" content="https://antmoveh.github.io/2021/07/30/%E5%AD%98%E5%82%A8%E5%8D%B7%E6%8C%87%E6%A0%87%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5%E4%B9%8B%E6%97%85/index.html">
+<meta property="og:site_name" content="蚂蚁搬家H">
+<meta property="og:description" content="背景： 最近有小伙伴反映，使用存储驱动（比如：NFS-CSI、Ceph-CSI）创建的存储卷，在Grafana看不到其容量指标，并且Prometheus中也收集不到卷容量、使用量等指标 据笔者所知Grafana内置了kubernetes&#x2F;Persistent Volumes指标模板，并且其指标数据来源于kubelet；在此之前笔者并未对kubelet metrics接口进行深入研究过，借此机会探究">
+<meta property="og:locale">
+<meta property="og:image" content="https://antmoveh.github.io/2021/07/30/%E5%AD%98%E5%82%A8%E5%8D%B7%E6%8C%87%E6%A0%87%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5%E4%B9%8B%E6%97%85/_posts/%E5%AD%98%E5%82%A8%E5%8D%B7%E6%8C%87%E6%A0%87%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5%E4%B9%8B%E6%97%85/kubelet.png">
+<meta property="og:image" content="https://github.com/antmoveh/antmoveh.github.io/blob/main/images/favicon.png">
+<meta property="og:image" content="d:/img/pvcref.png">
+<meta property="og:image" content="d:/img/metrics.png">
+<meta property="article:published_time" content="2021-07-30T06:14:44.697Z">
+<meta property="article:modified_time" content="2021-07-30T06:37:18.305Z">
+<meta property="article:author" content="antmoveh">
+<meta property="article:tag" content="Kubernetes">
+<meta property="article:tag" content="storageclass">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://antmoveh.github.io/2021/07/30/%E5%AD%98%E5%82%A8%E5%8D%B7%E6%8C%87%E6%A0%87%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5%E4%B9%8B%E6%97%85/_posts/%E5%AD%98%E5%82%A8%E5%8D%B7%E6%8C%87%E6%A0%87%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5%E4%B9%8B%E6%97%85/kubelet.png">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":true,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: '博主'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+  
+  (function(){
+	if(''){
+		if (prompt('请输入文章密码') !== ''){
+			alert('密码错误！');
+			history.back();
+		}
+	}
+})();
+  
+</script>
+
+
+
+  <link rel="canonical" href="https://antmoveh.github.io/2021/07/30/存储卷指标问题排查之旅/"/>
+
+
+
+
+
+  <title>存储卷指标问题排查之旅 | 蚂蚁搬家H</title>
+  
+
+
+
+
+
+
+
+
+<meta name="generator" content="Hexo 5.3.0"></head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/"  class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">蚂蚁搬家H</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle">搬哪去</p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br />
+            
+            首页
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br />
+            
+            分类
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br />
+            
+            归档
+          </a>
+        </li>
+      
+
+      
+        <li class="menu-item menu-item-search">
+          
+            <a href="javascript:;" class="popup-trigger">
+          
+            
+              <i class="menu-item-icon fa fa-search fa-fw"></i> <br />
+            
+            搜索
+          </a>
+        </li>
+      
+    </ul>
+  
+
+  
+    <div class="site-search">
+      
+  <div class="popup search-popup local-search-popup">
+  <div class="local-search-header clearfix">
+    <span class="search-icon">
+      <i class="fa fa-search"></i>
+    </span>
+    <span class="popup-btn-close">
+      <i class="fa fa-times-circle"></i>
+    </span>
+    <div class="local-search-input-wrapper">
+      <input autocomplete="off"
+             placeholder="搜索..." spellcheck="false"
+             type="text" id="local-search-input">
+    </div>
+  </div>
+  <div id="local-search-result"></div>
+</div>
+
+
+
+    </div>
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://antmoveh.github.io/2021/07/30/%E5%AD%98%E5%82%A8%E5%8D%B7%E6%8C%87%E6%A0%87%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5%E4%B9%8B%E6%97%85/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="">
+      <meta itemprop="description" content="">
+      <meta itemprop="image" content="/images/avatar.gif">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="蚂蚁搬家H">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">存储卷指标问题排查之旅</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2021-07-30T14:14:44+08:00">
+                2021-07-30
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Kubernetes/" itemprop="url" rel="index">
+                    <span itemprop="name">Kubernetes</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+            <span class="post-meta-divider">|</span>
+            <span class="page-pv"><i class="fa fa-file-o"></i> 阅读数
+            <span class="busuanzi-value" id="busuanzi_value_page_pv" ></span>
+            </span>
+          
+
+          
+            <div class="post-wordcount">
+              
+                
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-file-word-o"></i>
+                </span>
+                
+                  <span class="post-meta-item-text">字数统计&#58;</span>
+                
+                <span title="字数统计">
+                  6.9k
+                </span>
+              
+
+              
+                <span class="post-meta-divider">|</span>
+              
+
+              
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-clock-o"></i>
+                </span>
+                
+                  <span class="post-meta-item-text">阅读时长 &asymp;</span>
+                
+                <span title="阅读时长">
+                  35
+                </span>
+              
+            </div>
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h4 id="背景："><a href="#背景：" class="headerlink" title="背景："></a>背景：</h4><ul>
+<li>最近有小伙伴反映，使用存储驱动（比如：NFS-CSI、Ceph-CSI）创建的存储卷，在Grafana看不到其容量指标，并且Prometheus中也收集不到卷容量、使用量等指标</li>
+<li>据笔者所知Grafana内置了<code>kubernetes/Persistent Volumes</code>指标模板，并且其指标数据来源于kubelet；在此之前笔者并未对kubelet metrics接口进行深入研究过，借此机会探究一下kubelet 对于存储卷指标收集的实现；</li>
+</ul>
+<h4 id="分析-amp-确认："><a href="#分析-amp-确认：" class="headerlink" title="分析&amp;确认："></a>分析&amp;确认：</h4><ul>
+<li><p>既然小伙伴反映了问题，我们首先要看一下出现问题的环境，基本的确认列表如下：</p>
+<ul>
+<li>使用存储驱动（NFS-CSI、Ceph-CSI）创建了PVC并且已经绑定成功（√）</li>
+<li>打开Grafana查看<code>kubernetes/Persistent Volumes</code>是否有指标，确实没有（×）</li>
+<li>在Grafana查看其他的kubernetes内置指标<code>kubernetes/Compute Resources/Cluster</code>，指标正常（√）</li>
+<li>在Grafana查看<code>kubernetes/Persistent Volumes</code>指标计算公式，获取指标公式（√）</li>
+<li>在Prometheus查看是否已经收集到对应的指标，发现未收集到（×）</li>
+<li>在Prometheus查看是否收集到kubelet其他指标，已经收集到（√）</li>
+<li>在k8s集群中查看kubelet相关的<code>ServiceMonitor</code>资源，正常配置（√）</li>
+<li>直接调用<a target="_blank" rel="noopener" href="https://kubelet:10250/metrics%EF%BC%8C%E6%8E%A5%E5%8F%A3%E6%AD%A3%E5%B8%B8%E4%BD%86%E6%9C%AA%E8%83%BD%E8%8E%B7%E5%8F%96%E5%88%B0volume%E7%9B%B8%E5%85%B3%E6%8C%87%E6%A0%87%EF%BC%88x">https://kubelet:10250/metrics，接口正常但未能获取到volume相关指标（x</a>)</li>
+</ul>
+</li>
+<li><p><code>kubernetes/Persistent Volumes</code>指标计算公式如下，通过名字就可以看出是kubelet暴露的指标</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">(</span><br><span class="line">  sum without(instance, node) (kubelet_volume_stats_capacity_bytes&#123;cluster=&quot;&quot;, job=&quot;kubelet&quot;, namespace=&quot;&quot;, persistentvolumeclaim=&quot;&quot;&#125;)</span><br><span class="line">  sum without(instance, node) (kubelet_volume_stats_available_bytes&#123;cluster=&quot;&quot;, job=&quot;kubelet&quot;, namespace=&quot;&quot;,persistentvolumeclaim=&quot;&quot;&#125;)</span><br><span class="line">)</span><br><span class="line"></span><br></pre></td></tr></table></figure></li>
+<li><p>通过上述分析我们可以得出结论：Kubelet metrics接口并未暴露volume卷相关的指标数据！</p>
+</li>
+<li><p>下一步自然是查看一下为何kubelet metrics接口并未暴露出volume相关指标数据</p>
+</li>
+</ul>
+<h4 id="基本概念："><a href="#基本概念：" class="headerlink" title="基本概念："></a>基本概念：</h4><ul>
+<li>Prometheus主动调用应用服务的/metrics接口来获取应用指标，在Kubernetes中通过部署CRD资源ServiceMonitor来使Prometheus operator发现需要采集指标的服务，在我们上边的检查清单中主要是确认在这个链条中哪一个环节出了问题</li>
+<li>kubelet启动后默认监听 10250 端口，接收并执行 Master 发来的指令，管理 Pod 及 Pod 中的容器</li>
+</ul>
+<h4 id="第一道坎："><a href="#第一道坎：" class="headerlink" title="第一道坎："></a>第一道坎：</h4><ul>
+<li><p>当我们直接调用kubelet接口时通常会出现如下错误</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">$</span><span class="bash"> curl https://192.168.56.121:10250/metrics</span></span><br><span class="line">unauthorized</span><br></pre></td></tr></table></figure></li>
+<li><p>这是因为kubelet开启了证书认证，通常这种情况有两种方式访问</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span><span class="bash"> 第一种方式：创建kubernetes需要创建kubectl使用的admin权限证书，使用此证书可以直接访问该接口</span></span><br><span class="line"><span class="meta">$</span><span class="bash"> curl -s --cacert /etc/kubernetes/pki/ca.pem --cert /etc/kubernetes/pki/admin.pem --key /etc/kubernetes/pki/admin-key.pem https://192.168.56.121:10250/metrics|head</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#</span><span class="bash"> 第二种方式：使用token方式，先查看一下用于kubelet所有权限的角色</span></span><br><span class="line"><span class="meta">$</span><span class="bash"> kubectl describe clusterrole system:kubelet-api-admin</span></span><br><span class="line">Name:         system:kubelet-api-admin</span><br><span class="line">Labels:       kubernetes.io/bootstrapping=rbac-defaults</span><br><span class="line">Annotations:  rbac.authorization.kubernetes.io/autoupdate: true</span><br><span class="line">PolicyRule:</span><br><span class="line">  Resources      Non-Resource URLs  Resource Names  Verbs</span><br><span class="line">  ---------      -----------------  --------------  -----</span><br><span class="line">  nodes/log      []                 []              [*]</span><br><span class="line">  nodes/metrics  []                 []              [*]</span><br><span class="line">  nodes/proxy    []                 []              [*]</span><br><span class="line">  nodes/spec     []                 []              [*]</span><br><span class="line">  nodes/stats    []                 []              [*]</span><br><span class="line">  nodes          []                 []              [get list watch proxy]</span><br><span class="line"></span><br><span class="line"><span class="meta">$</span><span class="bash"> kubectl create clusterrolebinding kubelet-api-test --clusterrole=system:kubelet-api-admin --serviceaccount=default:kubelet-api-test</span></span><br><span class="line"><span class="meta">$</span><span class="bash"> SECRET=$(kubectl get secrets | grep kubelet-api-test | awk <span class="string">&#x27;&#123;print $1&#125;&#x27;</span>)</span></span><br><span class="line"><span class="meta">$</span><span class="bash"> TOKEN=$(kubectl describe secret <span class="variable">$&#123;SECRET&#125;</span> | grep -E <span class="string">&#x27;^token&#x27;</span> | awk <span class="string">&#x27;&#123;print $2&#125;&#x27;</span>)</span></span><br><span class="line"><span class="meta">$</span><span class="bash"> <span class="built_in">echo</span> <span class="variable">$&#123;TOKEN&#125;</span></span></span><br><span class="line"><span class="meta">$</span><span class="bash"> curl -s --cacert /etc/kubernetes/cert/ca.pem -H <span class="string">&quot;Authorization: Bearer <span class="variable">$&#123;TOKEN&#125;</span>&quot;</span> https://192.168.56.121:10250/metrics|head</span></span><br></pre></td></tr></table></figure></li>
+<li><p>我们不一样，我们选第三种</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 修改 /var/lib/kubelet/config.yaml,直接关闭kubelet证书认证，然后重启kubelet</span></span><br><span class="line"><span class="comment"># 这样就能愉快的用浏览器访问https://192.168.56.121:10250/metrics接口了</span></span><br><span class="line"><span class="string">```</span></span><br><span class="line"><span class="attr">authentication:</span></span><br><span class="line">  <span class="attr">anonymous:</span></span><br><span class="line">    <span class="attr">enabled:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">webhook:</span></span><br><span class="line">    <span class="attr">cacheTTL:</span> <span class="string">0s</span></span><br><span class="line">    <span class="attr">enabled:</span> <span class="literal">false</span></span><br><span class="line">  <span class="attr">x509:</span></span><br><span class="line">    <span class="attr">clientCAFile:</span> <span class="string">/etc/kubernetes/pki/ca.crt</span></span><br><span class="line"><span class="attr">authorization:</span></span><br><span class="line">  <span class="attr">mode:</span> <span class="string">AlwaysAllow</span></span><br><span class="line">  <span class="attr">webhook:</span></span><br><span class="line">    <span class="attr">cacheAuthorizedTTL:</span> <span class="string">0s</span></span><br><span class="line">    <span class="attr">cacheUnauthorizedTTL:</span> <span class="string">0s</span></span><br><span class="line"></span><br><span class="line"><span class="string">````</span></span><br></pre></td></tr></table></figure></li>
+<li><p>顺便一提，10250端口能访问很多资源，比如：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;pods、&#x2F;runningpods</span><br><span class="line">&#x2F;metrics、&#x2F;metrics&#x2F;cadvisor、&#x2F;metrics&#x2F;probes</span><br><span class="line">&#x2F;spec</span><br><span class="line">&#x2F;stats、&#x2F;stats&#x2F;container</span><br><span class="line">&#x2F;logs</span><br><span class="line">&#x2F;run&#x2F;、&#x2F;exec&#x2F;, &#x2F;attach&#x2F;, &#x2F;portForward&#x2F;, &#x2F;containerLogs&#x2F;</span><br><span class="line">更多详情：https:&#x2F;&#x2F;github.com&#x2F;kubernetes&#x2F;kubernetes&#x2F;blob&#x2F;master&#x2F;pkg&#x2F;kubelet&#x2F;server&#x2F;server.go#L434:3</span><br></pre></td></tr></table></figure>
+<h4 id="第二道曙光："><a href="#第二道曙光：" class="headerlink" title="第二道曙光："></a>第二道曙光：</h4></li>
+<li><p>通过上边几步基本上确认了是由于kubelet metrics接口未上报<code>kubelet_volume_stats-*</code>指标导致的问题，那就去google一下这个指标吧</p>
+</li>
+<li><p>经过多番查找kubernetes在1.8版本增加了暴露volume指标的接口：详细链接如下</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://github.com/google/cadvisor/issues/1702#issuecomment-381189602">https://github.com/google/cadvisor/issues/1702#issuecomment-381189602</a></li>
+<li><a target="_blank" rel="noopener" href="https://github.com/kubernetes/kubernetes/commit/dac2068bbd7b3365a879cbd0a5131a0955832264?branch=dac2068bbd7b3365a879cbd0a5131a0955832264&amp;diff=split">https://github.com/kubernetes/kubernetes/commit/dac2068bbd7b3365a879cbd0a5131a0955832264?branch=dac2068bbd7b3365a879cbd0a5131a0955832264&amp;diff=split</a></li>
+</ul>
+</li>
+<li><p>所以我们把kubernetes代码checkout到v1.21.2版本查看</p>
+</li>
+<li><p>关键的代码如下：</p>
+</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// k8s.io/kubernetes/pkg/kubelet/metrics/collectors/volume_stats.go:91</span></span><br><span class="line"><span class="comment">// CollectWithStability implements the metrics.StableCollector interface.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(collector *volumeStatsCollector)</span> <span class="title">CollectWithStability</span><span class="params">(ch <span class="keyword">chan</span>&lt;- metrics.Metric)</span></span> &#123;</span><br><span class="line">    <span class="comment">// 关键就这么一句，指标均来源于当前节点上的POD</span></span><br><span class="line">    <span class="comment">// 其实这也证明了kubelet只能获取当前在它节点上挂载中的volume</span></span><br><span class="line">	podStats, err := collector.statsProvider.ListPodStats()</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">     ...</span><br><span class="line">	allPVCs := sets.String&#123;&#125;</span><br><span class="line">	<span class="keyword">for</span> _, podStat := <span class="keyword">range</span> podStats &#123;</span><br><span class="line">		<span class="keyword">if</span> podStat.VolumeStats == <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">for</span> _, volumeStat := <span class="keyword">range</span> podStat.VolumeStats &#123;</span><br><span class="line">			pvcRef := volumeStat.PVCRef</span><br><span class="line">			<span class="keyword">if</span> pvcRef == <span class="literal">nil</span> &#123;</span><br><span class="line">                  <span class="comment">// 之所以metrics指标接口未有kubelet_volume_stats-*是因为代码执行了这一句直接跳过了；</span></span><br><span class="line">                  <span class="comment">// 怎么判断出代码走了这条路径，下边分解</span></span><br><span class="line">				<span class="comment">// ignore if no PVC reference</span></span><br><span class="line">				<span class="keyword">continue</span></span><br><span class="line">			&#125;</span><br><span class="line">			pvcUniqStr := pvcRef.Namespace + <span class="string">&quot;/&quot;</span> + pvcRef.Name</span><br><span class="line">			<span class="keyword">if</span> allPVCs.Has(pvcUniqStr) &#123;</span><br><span class="line">				<span class="comment">// ignore if already collected</span></span><br><span class="line">				<span class="keyword">continue</span></span><br><span class="line">			&#125;</span><br><span class="line">			addGauge(volumeStatsCapacityBytesDesc, pvcRef, <span class="keyword">float64</span>(*volumeStat.CapacityBytes))</span><br><span class="line">			addGauge(volumeStatsAvailableBytesDesc, pvcRef, <span class="keyword">float64</span>(*volumeStat.AvailableBytes))</span><br><span class="line">			addGauge(volumeStatsUsedBytesDesc, pvcRef, <span class="keyword">float64</span>(*volumeStat.UsedBytes))</span><br><span class="line">			addGauge(volumeStatsInodesDesc, pvcRef, <span class="keyword">float64</span>(*volumeStat.Inodes))</span><br><span class="line">			addGauge(volumeStatsInodesFreeDesc, pvcRef, <span class="keyword">float64</span>(*volumeStat.InodesFree))</span><br><span class="line">			addGauge(volumeStatsInodesUsedDesc, pvcRef, <span class="keyword">float64</span>(*volumeStat.InodesUsed))</span><br><span class="line">			allPVCs.Insert(pvcUniqStr)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li>同样在这个文件中我们还可以看到kubelet提供了哪些有关volume的指标</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">VolumeStatsCapacityBytesKey  = <span class="string">&quot;volume_stats_capacity_bytes&quot;</span></span><br><span class="line">VolumeStatsAvailableBytesKey = <span class="string">&quot;volume_stats_available_bytes&quot;</span></span><br><span class="line">VolumeStatsUsedBytesKey      = <span class="string">&quot;volume_stats_used_bytes&quot;</span></span><br><span class="line">VolumeStatsInodesKey         = <span class="string">&quot;volume_stats_inodes&quot;</span></span><br><span class="line">VolumeStatsInodesFreeKey     = <span class="string">&quot;volume_stats_inodes_free&quot;</span></span><br><span class="line">VolumeStatsInodesUsedKey     = <span class="string">&quot;volume_stats_inodes_used&quot;</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>关于如何进行指标注册等部分代码，简单展示一下，如果写过为prometheus暴露指标的应该很容易明白</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// initializeModules will initialize internal modules that do not require the container runtime to be up.</span></span><br><span class="line"><span class="comment">// Note that the modules here must not depend on modules that are not initialized here.</span></span><br><span class="line"><span class="comment">// k8s.io/kubernetes/pkg/kubelet/kubelet.go:1323</span></span><br><span class="line"><span class="comment">// kubelet 初始化，里边包含了Prometheus metrics指标注册</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(kl *Kubelet)</span> <span class="title">initializeModules</span><span class="params">()</span> <span class="title">error</span></span> &#123;</span><br><span class="line">	<span class="comment">// Prometheus metrics.</span></span><br><span class="line">	metrics.Register(</span><br><span class="line">        <span class="comment">// 通过传入参数的方式加入volume metrics</span></span><br><span class="line">		collectors.NewVolumeStatsCollector(kl),</span><br><span class="line">		collectors.NewLogMetricsCollector(kl.StatsProvider.ListPodStats),</span><br><span class="line">	)</span><br><span class="line">	metrics.SetNodeName(kl.nodeName)</span><br><span class="line">	servermetrics.Register()</span><br><span class="line">    ....</span><br><span class="line">    </span><br><span class="line">	<span class="comment">// Start resource analyzer</span></span><br><span class="line">	kl.resourceAnalyzer.Start()</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// k8s.io/kubernetes/pkg/kubelet/metrics/metrics.go:439</span></span><br><span class="line"><span class="comment">// Register registers all metrics.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Register</span><span class="params">(collectors ...metrics.StableCollector)</span></span> &#123;</span><br><span class="line">	<span class="comment">// Register the metrics.</span></span><br><span class="line">	registerMetrics.Do(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		legacyregistry.MustRegister(NodeName)</span><br><span class="line">		legacyregistry.MustRegister(PodWorkerDuration)</span><br><span class="line">		legacyregistry.MustRegister(PodStartDuration)</span><br><span class="line">         ...</span><br><span class="line">        <span class="comment">// 实际上在这里注册的volume metrics，这是prometheus metrics推荐的注册方式，注册一个实现指定接口的结构体</span></span><br><span class="line">		<span class="keyword">for</span> _, collector := <span class="keyword">range</span> collectors &#123;</span><br><span class="line">			legacyregistry.CustomMustRegister(collector)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li>基本的volume部分指标代码我们看完了，下面就忒验证一下为啥这段代码不产生volume指标</li>
+</ul>
+<h4 id="第三道坎："><a href="#第三道坎：" class="headerlink" title="第三道坎："></a>第三道坎：</h4><ul>
+<li><p>如何验证上述代码的是否在工作，笔者想到的方法是启动kubelet debug一下这块运行逻辑，制定好方法就这么干</p>
+</li>
+<li><p>一个小插曲：拉取kubernetes代码后，里边经常有很多红色的方法，导致无法顺利跳转经过反反复复各种实验后，最终删除了kubernetes的vendor目录，配置go.mod模式后一切就OK了，顺便一提Go版本升级到了1.16</p>
+</li>
+<li><p>如果要Debug kubelet 首先要启动kubelet并把它加入一个kubernetes集群</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line">第一步：创建一个K8s集群</span><br><span class="line"><span class="meta">$</span><span class="bash"> kubectl get nodes -o wide</span></span><br><span class="line">NAME             STATUS   ROLES                  AGE   VERSION   INTERNAL-IP    </span><br><span class="line">192.168.56.120   Ready    control-plane,master   52m   v1.20.4   192.168.56.120 </span><br><span class="line">192.168.56.121   Ready    &lt;none&gt;                 49m   v1.20.4   192.168.56.121 </span><br><span class="line"></span><br><span class="line">第二步：本地开发环境为ubuntu16，需要做一些配置</span><br><span class="line">① 关闭swapoff -a</span><br><span class="line">② 开启ipv4转发</span><br><span class="line">③ 配置docker cgroupManager为systemd</span><br><span class="line">④ 关闭防火墙 等等</span><br><span class="line">⑤ 设置hostname hostnamectl 192.168.56.101，之所以如此设置是为了让各个节点可以通过hostname直接访问</span><br><span class="line">⑥ 安装kubeadm yum install kubeadm kubelet</span><br><span class="line">第三步：使用kubeadm join命令将开发环境加入集群</span><br><span class="line">kubeadm join 192.168.56.120:6443 --token 4smpu7.uji2fimas85b5fwy     --discovery-token-ca-cert-hash sha256:97de144cb013ba79ce7fc059f418e92a900944ebbba2b51c39c6ecbb08406bf2 </span><br><span class="line"></span><br><span class="line"><span class="meta">$</span><span class="bash"> kubectl get nodes</span></span><br><span class="line">NAME             STATUS   ROLES                  AGE   VERSION</span><br><span class="line">192.168.56.101   Ready    &lt;none&gt;                 11s   v1.21.3</span><br><span class="line">192.168.56.120   Ready    control-plane,master   63m   v1.20.4</span><br><span class="line">192.168.56.121   Ready    &lt;none&gt;                 61m   v1.20.4</span><br><span class="line"></span><br><span class="line">备注①：如果你是重复join，需要先删除/etc/kubernete/* /var/lib/kubelet/* 下的所有文件</span><br><span class="line">备注②：节点上docker的配置的cgroup使用systemd管理，在/var/lib/kubelet/config.yaml中要加入cgroupDriver: systemd配置</span><br><span class="line">备注③：这一步的join操作主要是为了生成节点kubelet证书，笔者曾实验过将其他节点的证书挪到开发环境，发现证书和节点hostname绑定，故使用这种方法生成节点证书</span><br><span class="line">备注④：如果能自定义生成节点证书可以不必这样</span><br><span class="line"></span><br><span class="line">第四步：停止kubelet，启动我们Goland中的kubelet</span><br><span class="line"><span class="meta">$</span><span class="bash"> systemctl stop kubelet &amp;&amp; systemctl <span class="built_in">disable</span> kubelet</span></span><br><span class="line"></span><br><span class="line">Goland的中需要配置一下kubelet main目录，以及启动参数，可以参考下图</span><br><span class="line">/data/gopath/src/k8s.io/kubernetes/cmd/kubelet</span><br><span class="line">--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf</span><br><span class="line">--kubeconfig=/etc/kubernetes/kubelet.conf</span><br><span class="line">--config=/var/lib/kubelet/config.yaml</span><br><span class="line">--network-plugin=cni</span><br><span class="line">--pod-infra-container-image=registry.cn-hangzhou.aliyuncs.com/antmoveh/pause:3.4.1</span><br><span class="line"></span><br><span class="line">启动后，查看集群节点</span><br><span class="line"><span class="meta">$</span><span class="bash"> kubectl get nodes</span></span><br><span class="line">NAME             STATUS     ROLES                  AGE   VERSION</span><br><span class="line">192.168.56.101   Ready      &lt;none&gt;                 12m   v0.0.0-master+$Format:%H$</span><br><span class="line">192.168.56.120   Ready      control-plane,master   75m   v1.20.4</span><br><span class="line">192.168.56.121   Ready      &lt;none&gt;                 73m   v1.20.4</span><br><span class="line"></span><br><span class="line">至此我们就能愉快的debug kubelet了</span><br><span class="line"></span><br><span class="line">备注①：我给Goland分配了16G可用内存，编译起来尚好。配置差些编译时间略长</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<p><img src="_posts/%E5%AD%98%E5%82%A8%E5%8D%B7%E6%8C%87%E6%A0%87%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5%E4%B9%8B%E6%97%85/kubelet.png"></p>
+<p><img src="https://github.com/antmoveh/antmoveh.github.io/blob/main/images/favicon.png"></p>
+</li>
+<li><p>既然我们已经可以Debug kubelet了，我们来解决上一个问题，如何确定方法metrics执行的<code>if pvcRef == nil &#123;continue&#125;</code></p>
+</li>
+<li><p>通过浏览器访问<code>https://127.0.0.1:10250/metrics</code> ，不要忘了关闭kubelet的https验证</p>
+</li>
+<li><p>一图胜千言，直观感受一下吧，如果细心观察所有的pod的volumeStats PVCRef 其实都是nil</p>
+</li>
+</ul>
+<p><img src="D:\img\pvcref.png"></p>
+<ul>
+<li>那问题就转到pod的pvcRef是如何填充的？</li>
+</ul>
+<h4 id="第四道坎："><a href="#第四道坎：" class="headerlink" title="第四道坎："></a>第四道坎：</h4><ul>
+<li><p>POD指标的获取，跟踪<code>collector.statsProvider.ListPodStats()</code>一路点进去就点到cadvisor获取指标代码</p>
+<figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// k8s.io/kubernetes/pkg/kubeletstats/cadvisor_stats_provider.go:78</span></span><br><span class="line"><span class="comment">// ListPodStats returns the stats of all the pod-managed containers.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *cadvisorStatsProvider)</span> <span class="title">ListPodStats</span><span class="params">()</span> <span class="params">([]statsapi.PodStats, error)</span></span> &#123;</span><br><span class="line">     ...</span><br><span class="line">    <span class="comment">// 这里有很多指标收集的代码，把它们省略，我们只关注收集volumeStats的部分</span></span><br><span class="line">	<span class="comment">// Add each PodStats to the result.</span></span><br><span class="line">	result := <span class="built_in">make</span>([]statsapi.PodStats, <span class="number">0</span>, <span class="built_in">len</span>(podToStats))</span><br><span class="line">	<span class="keyword">for</span> _, podStats := <span class="keyword">range</span> podToStats &#123;</span><br><span class="line">		<span class="comment">// Lookup the volume stats for each pod.</span></span><br><span class="line">		podUID := types.UID(podStats.PodRef.UID)</span><br><span class="line">		<span class="keyword">var</span> ephemeralStats []statsapi.VolumeStats</span><br><span class="line">        <span class="comment">// 在这里获取的具体某个Pod的volumeStats</span></span><br><span class="line">        <span class="comment">// 这里的代码不用细究，只是路过下边的才会涉及到如何获取volume stats</span></span><br><span class="line">		<span class="keyword">if</span> vstats, found := p.resourceAnalyzer.GetPodVolumeStats(podUID); found &#123;</span><br><span class="line">			ephemeralStats = <span class="built_in">make</span>([]statsapi.VolumeStats, <span class="built_in">len</span>(vstats.EphemeralVolumes))</span><br><span class="line">			<span class="built_in">copy</span>(ephemeralStats, vstats.EphemeralVolumes)</span><br><span class="line">			podStats.VolumeStats = <span class="built_in">append</span>(<span class="built_in">append</span>([]statsapi.VolumeStats&#123;&#125;, vstats.EphemeralVolumes...), vstats.PersistentVolumes...)</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> result, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line">    </span><br><span class="line"><span class="comment">// 继续点进去，就来到了</span></span><br><span class="line"><span class="comment">// k8s.io/kubernetes/pkg/kubelet/server/stats/fs_resource_analyzer.go:99</span></span><br><span class="line"><span class="comment">// 这段代码看起来异常简单，其实就是获取了一些缓存，那我们就忒观察一下这个缓存如何更新的了       </span></span><br><span class="line"><span class="comment">// GetPodVolumeStats returns the PodVolumeStats for a given pod.  Results are looked up from a cache that</span></span><br><span class="line"><span class="comment">// is eagerly populated in the background, and never calculated on the fly.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *fsResourceAnalyzer)</span> <span class="title">GetPodVolumeStats</span><span class="params">(uid types.UID)</span> <span class="params">(PodVolumeStats, <span class="keyword">bool</span>)</span></span> &#123;</span><br><span class="line">	cache := s.cachedVolumeStats.Load().(statCache)</span><br><span class="line">	statCalc, found := cache[uid]</span><br><span class="line">	<span class="keyword">if</span> !found &#123;</span><br><span class="line">		<span class="comment">// <span class="doctag">TODO:</span> Differentiate between stats being empty</span></span><br><span class="line">		<span class="comment">// See issue #20679</span></span><br><span class="line">		<span class="keyword">return</span> PodVolumeStats&#123;&#125;, <span class="literal">false</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> statCalc.GetLatest()</span><br><span class="line">&#125;</span><br><span class="line">    </span><br></pre></td></tr></table></figure></li>
+<li><p>还记得我们要查找为啥pvcRef对象是nil，就是因为这个缓存里没有！</p>
+</li>
+<li><p>可以脑补一下，更新这个缓存必然是需要一个goroutine，下边实际是要看这个定时goroutine是如何实现的，多长时间更新一次、从哪里获取这些指标</p>
+</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 简单的start函数</span></span><br><span class="line"><span class="comment">// k8s.io/kubernetes/pkg/kubelet/server/stats/fs_resource_analyzer.go:61</span></span><br><span class="line"><span class="comment">// Start eager background caching of volume stats.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *fsResourceAnalyzer)</span> <span class="title">Start</span><span class="params">()</span></span> &#123;</span><br><span class="line">	s.startOnce.Do(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        <span class="comment">// 这里要注意一下，这个时间是通过/var/lib/kubelet/config.yaml中volumeStatsAggPeriod: 30s配置的 默认为为1m0s，注意将这个值设置小于零更新指标协程还是会正常启动</span></span><br><span class="line">		<span class="keyword">if</span> s.calcPeriod &lt;= <span class="number">0</span> &#123;</span><br><span class="line">			klog.InfoS(<span class="string">&quot;Volume stats collection disabled&quot;</span>)</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		&#125;</span><br><span class="line">		klog.InfoS(<span class="string">&quot;Starting FS ResourceAnalyzer&quot;</span>)</span><br><span class="line">        <span class="comment">// 只有这个方法比较关键</span></span><br><span class="line">		<span class="keyword">go</span> wait.Forever(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; s.updateCachedPodVolumeStats() &#125;, s.calcPeriod)</span><br><span class="line">	&#125;)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 这两个方法靠着</span></span><br><span class="line"><span class="comment">// updateCachedPodVolumeStats calculates and caches the PodVolumeStats for every Pod known to the kubelet.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *fsResourceAnalyzer)</span> <span class="title">updateCachedPodVolumeStats</span><span class="params">()</span></span> &#123;</span><br><span class="line">	oldCache := s.cachedVolumeStats.Load().(statCache)</span><br><span class="line">	newCache := <span class="built_in">make</span>(statCache)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// Copy existing entries to new map, creating/starting new entries for pods missing from the cache</span></span><br><span class="line">	<span class="keyword">for</span> _, pod := <span class="keyword">range</span> s.statsProvider.GetPods() &#123;</span><br><span class="line">		<span class="keyword">if</span> value, found := oldCache[pod.GetUID()]; !found &#123;</span><br><span class="line">            <span class="comment">// 这个方法就是获取新的指标了，点击startOnce一路就会点到核心方法</span></span><br><span class="line">			newCache[pod.GetUID()] = newVolumeStatCalculator(s.statsProvider, s.calcPeriod, pod, s.eventRecorder).StartOnce()</span><br><span class="line">		&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">			newCache[pod.GetUID()] = value</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">    ...</span><br><span class="line">	<span class="comment">// Update the cache reference</span></span><br><span class="line">	s.cachedVolumeStats.Store(newCache)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 点下去会找到，这个方法，这算是触及到获取指标的核心了</span></span><br><span class="line"><span class="comment">// k8s.io/kubernetes/pkg/kubelet/server/stats/volume_stat_calculator.go:96</span></span><br><span class="line"><span class="comment">// calcAndStoreStats calculates PodVolumeStats for a given pod and writes the result to the s.latest cache.</span></span><br><span class="line"><span class="comment">// If the pod references PVCs, the prometheus metrics for those are updated with the result.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *volumeStatCalculator)</span> <span class="title">calcAndStoreStats</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="comment">// Find all Volumes for the Pod</span></span><br><span class="line">	volumes, found := s.statsProvider.ListVolumesForPod(s.pod.UID)</span><br><span class="line">	<span class="keyword">if</span> !found &#123;</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">    ...</span><br><span class="line">	<span class="comment">// Call GetMetrics on each Volume and copy the result to a new VolumeStats.FsStats</span></span><br><span class="line">	<span class="keyword">var</span> ephemeralStats []stats.VolumeStats</span><br><span class="line">	<span class="keyword">var</span> persistentStats []stats.VolumeStats</span><br><span class="line">	<span class="keyword">for</span> name, v := <span class="keyword">range</span> volumes &#123;</span><br><span class="line">        <span class="comment">// 这个就是获取真实的指标接口了，找了这么久终于找到了！</span></span><br><span class="line">        <span class="comment">// 等点击去一看 懵 ,看下图</span></span><br><span class="line">		metric, err := v.GetMetrics()</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="comment">// Expected for Volumes that don&#x27;t support Metrics</span></span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line">	...</span><br><span class="line">	<span class="comment">// Store the new stats</span></span><br><span class="line">	s.latest.Store(PodVolumeStats&#123;EphemeralVolumes: ephemeralStats,</span><br><span class="line">		PersistentVolumes: persistentStats&#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li>metrics的实现有这么多，这获取指标到底走的哪个方法！</li>
+</ul>
+<p><img src="D:\img\metrics.png"></p>
+<h4 id="第五道曙光："><a href="#第五道曙光：" class="headerlink" title="第五道曙光："></a>第五道曙光：</h4><ul>
+<li><p>笔者曾试图在ubuntu开发环境部署存储服务进行卷挂载，如果挂载成功通过Debug方式查看到底走的哪个方法，不过遗憾的是笔者的开发环境挂卷存在各种各样问题，这就不得不导致笔者换个思路来验证</p>
+</li>
+<li><p>第一步：在k8s集群部署一个CSI存储服务，并部署Pod使用该存储卷，比如NFS-CSI、Ceph-CSI等</p>
+</li>
+<li><p>第二步：部署一个使用hostpath卷的Pod</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">PersistentVolumeClaim</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">task-pvc</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">storageClassName:</span> <span class="string">manual</span></span><br><span class="line">  <span class="attr">accessModes:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">ReadWriteOnce</span></span><br><span class="line">  <span class="attr">resources:</span></span><br><span class="line">    <span class="attr">requests:</span></span><br><span class="line">      <span class="attr">storage:</span> <span class="string">10Gi</span></span><br><span class="line"></span><br><span class="line"><span class="meta">---</span></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">PersistentVolume</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">task-pv-volume</span></span><br><span class="line">  <span class="attr">labels:</span></span><br><span class="line">    <span class="attr">type:</span> <span class="string">local</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">storageClassName:</span> <span class="string">manual</span></span><br><span class="line">  <span class="attr">capacity:</span></span><br><span class="line">    <span class="attr">storage:</span> <span class="string">10Gi</span></span><br><span class="line">  <span class="attr">accessModes:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">ReadWriteOnce</span></span><br><span class="line">  <span class="attr">hostPath:</span></span><br><span class="line">    <span class="attr">path:</span> <span class="string">&quot;/mnt/volume&quot;</span></span><br><span class="line"><span class="meta">---</span></span><br><span class="line"></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Pod</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">volume-test</span></span><br><span class="line">  <span class="attr">namespace:</span> <span class="string">default</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">containers:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">volume-test</span></span><br><span class="line">    <span class="attr">image:</span> <span class="string">nginx</span></span><br><span class="line">    <span class="attr">imagePullPolicy:</span> <span class="string">IfNotPresent</span></span><br><span class="line">    <span class="attr">volumeMounts:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">hostpath</span></span><br><span class="line">      <span class="attr">mountPath:</span> <span class="string">/data</span></span><br><span class="line">    <span class="attr">ports:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">containerPort:</span> <span class="number">80</span></span><br><span class="line">  <span class="attr">nodeName:</span> <span class="number">192.168</span><span class="number">.56</span><span class="number">.121</span></span><br><span class="line">  <span class="attr">volumes:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">hostpath</span></span><br><span class="line">    <span class="attr">persistentVolumeClaim:</span></span><br><span class="line">      <span class="attr">claimName:</span> <span class="string">task-pvc</span></span><br><span class="line"></span><br></pre></td></tr></table></figure></li>
+<li><p>第三步，在所有的指标实现加上日志，比如</p>
+</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// k8s.io/kubernetes/pkg/volume/metrics_nil.go:30</span></span><br><span class="line"><span class="comment">// 走这个方法表示不支持获取指标，中间我们加了一行日志</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(*MetricsNil)</span> <span class="title">GetMetrics</span><span class="params">()</span> <span class="params">(*Metrics, error)</span></span> &#123;</span><br><span class="line">	fmt.Println(<span class="string">&quot;metrics not support&quot;</span>)</span><br><span class="line">	<span class="keyword">return</span> &amp;Metrics&#123;&#125;, NewNotSupportedError()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li>第四步，进入<code>k8s.io/kubernetes/cmd/kubelet</code>目录下执行<code>go build .</code></li>
+<li>第五步，将编译好的kubelet放到<code>192.168.56.121</code>节点上替换它的<code>/usr/bin/kubelet</code>并重启kubelet</li>
+<li>第六步，很快就可以收集到kubelet日志<code>journalctl -u kubelet &gt; /tmp/kubelet.log</code>，分析查看一下我们添加的日志</li>
+</ul>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br></pre></td><td class="code"><pre><span class="line">Jul 28 06:55:06 192.168.56.121 kubelet[1523]: metrics du &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;pods&#x2F;89897880-6cc6-4e57-b22a-77fd647c8a22&#x2F;etc-hosts</span><br><span class="line">Jul 28 06:55:06 192.168.56.121 kubelet[1523]: &amp;&#123;2021-07-28 06:55:06.023601432 +0000 UTC m&#x3D;+567.083508594 4096 42954248Ki 37792860Ki 1 20984Ki 21396325 &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:55:07 192.168.56.121 kubelet[1523]: hostpath</span><br><span class="line">Jul 28 06:55:07 192.168.56.121 kubelet[1523]: &#x2F;mnt&#x2F;volume</span><br><span class="line">Jul 28 06:55:07 192.168.56.121 kubelet[1523]: metrics not support</span><br><span class="line">Jul 28 06:55:07 192.168.56.121 kubelet[1523]: &amp;&#123;0001-01-01 00:00:00 +0000 UTC &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:55:07 192.168.56.121 kubelet[1523]: default-token-4gbq6</span><br><span class="line">Jul 28 06:55:07 192.168.56.121 kubelet[1523]: &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;pods&#x2F;0a0a59a7-6422-483c-8ae8-3b7d3ad8795a&#x2F;volumes&#x2F;kubernetes.io~secret&#x2F;default-token-4gbq6</span><br><span class="line">Jul 28 06:55:07 192.168.56.121 kubelet[1523]: metrics_cached ?</span><br><span class="line">Jul 28 06:55:07 192.168.56.121 kubelet[1523]: &amp;&#123;2021-07-28 06:48:42.628758231 +0000 UTC m&#x3D;+183.688665397 12288 940964Ki 940952Ki 9 235241 235232 &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:55:43 192.168.56.121 kubelet[1523]: csi-volume</span><br><span class="line">Jul 28 06:55:43 192.168.56.121 kubelet[1523]: &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;pods&#x2F;f8d89fbd-c759-4062-bf1a-920b45296d9f&#x2F;volumes&#x2F;kubernetes.io~csi&#x2F;pvc-8b5770ec-1b16-4c19-b97d-e7cfa8d0ceec&#x2F;mount</span><br><span class="line">Jul 28 06:55:43 192.168.56.121 kubelet[1523]: metrics csi carina.storage.io</span><br><span class="line">Jul 28 06:55:43 192.168.56.121 kubelet[1523]: I0728 06:55:43.720937    1523 clientconn.go:106] parsed scheme: &quot;&quot;</span><br><span class="line">Jul 28 06:55:43 192.168.56.121 kubelet[1523]: I0728 06:55:43.720947    1523 clientconn.go:106] scheme &quot;&quot; not registered, fallback to default scheme</span><br><span class="line">Jul 28 06:55:43 192.168.56.121 kubelet[1523]: I0728 06:55:43.721108    1523 passthrough.go:48] ccResolverWrapper: sending update to cc: &#123;[&#123;&#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;plugins&#x2F;csi.carina.com&#x2F;csi.sock  &lt;nil&gt; 0 &lt;nil&gt;&#125;] &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:55:43 192.168.56.121 kubelet[1523]: I0728 06:55:43.721126    1523 clientconn.go:948] ClientConn switching balancer to &quot;pick_first&quot;</span><br><span class="line">Jul 28 06:55:43 192.168.56.121 kubelet[1523]: &amp;&#123;2021-07-28 06:55:43.720886779 +0000 UTC m&#x3D;+604.780793954 33184Ki 7158Mi 7296608Ki 3 3584Ki 3670013 &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:55:43 192.168.56.121 kubelet[1523]: default-token-vnnr4</span><br><span class="line">Jul 28 06:55:43 192.168.56.121 kubelet[1523]: &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;pods&#x2F;f8d89fbd-c759-4062-bf1a-920b45296d9f&#x2F;volumes&#x2F;kubernetes.io~secret&#x2F;default-token-vnnr4</span><br><span class="line">Jul 28 06:55:43 192.168.56.121 kubelet[1523]: metrics_cached ?</span><br><span class="line">Jul 28 06:55:43 192.168.56.121 kubelet[1523]: &amp;&#123;2021-07-28 06:51:42.633793572 +0000 UTC m&#x3D;+363.693700755 12288 940964Ki 940952Ki 9 235241 235232 &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:55:45 192.168.56.121 kubelet[1523]: scheduler-config</span><br><span class="line">Jul 28 06:55:45 192.168.56.121 kubelet[1523]: &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;pods&#x2F;89897880-6cc6-4e57-b22a-77fd647c8a22&#x2F;volumes&#x2F;kubernetes.io~configmap&#x2F;scheduler-config</span><br><span class="line">Jul 28 06:55:45 192.168.56.121 kubelet[1523]: metrics_cached ?</span><br><span class="line">Jul 28 06:55:45 192.168.56.121 kubelet[1523]: &amp;&#123;2021-07-28 06:46:42.673965766 +0000 UTC m&#x3D;+63.733872957 4096 42954248Ki 37793448Ki 5 20984Ki 21396589 &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:55:56 192.168.56.121 kubelet[1523]: xtables-lock</span><br><span class="line">Jul 28 06:55:56 192.168.56.121 kubelet[1523]: &#x2F;run&#x2F;xtables.lock</span><br><span class="line">Jul 28 06:55:56 192.168.56.121 kubelet[1523]: metrics not support</span><br><span class="line">Jul 28 06:55:56 192.168.56.121 kubelet[1523]: &amp;&#123;0001-01-01 00:00:00 +0000 UTC &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:55:56 192.168.56.121 kubelet[1523]: metrics du&#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;pods&#x2F;f8d89fbd-c759-4062-bf1a-920b45296d9f&#x2F;etc-hosts</span><br><span class="line">Jul 28 06:55:56 192.168.56.121 kubelet[1523]: &amp;&#123;2021-07-28 06:55:56.285126727 +0000 UTC m&#x3D;+617.345033890 4096 42954248Ki 37792528Ki 1 20984Ki 21396325 &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:14 192.168.56.121 kubelet[1523]: carina-csi-controller-token-dmhns</span><br><span class="line">Jul 28 06:56:14 192.168.56.121 kubelet[1523]: &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;pods&#x2F;572f71e5-a97c-4720-974c-bbc09002fad3&#x2F;volumes&#x2F;kubernetes.io~secret&#x2F;carina-csi-controller-token-dmhns</span><br><span class="line">Jul 28 06:56:14 192.168.56.121 kubelet[1523]: metrics_cached ?</span><br><span class="line">Jul 28 06:56:14 192.168.56.121 kubelet[1523]: &amp;&#123;2021-07-28 06:46:42.712326121 +0000 UTC m&#x3D;+63.772233305 12288 940964Ki 940952Ki 9 235241 235232 &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:14 192.168.56.121 kubelet[1523]: socket-dir</span><br><span class="line">Jul 28 06:56:14 192.168.56.121 kubelet[1523]: &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;pods&#x2F;572f71e5-a97c-4720-974c-bbc09002fad3&#x2F;volumes&#x2F;kubernetes.io~empty-dir&#x2F;socket-dir</span><br><span class="line">Jul 28 06:56:14 192.168.56.121 kubelet[1523]: metrics du&#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;pods&#x2F;572f71e5-a97c-4720-974c-bbc09002fad3&#x2F;volumes&#x2F;kubernetes.io~empty-dir&#x2F;socket-dir</span><br><span class="line">Jul 28 06:56:14 192.168.56.121 kubelet[1523]: &amp;&#123;2021-07-28 06:56:14.346621409 +0000 UTC m&#x3D;+635.406528574 0 940964Ki 940964Ki 2 235241 235239 &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:14 192.168.56.121 kubelet[1523]: &amp;&#123;2021-07-28 06:56:14.346621409 +0000 UTC m&#x3D;+635.406528574 0 940964Ki 940964Ki 2 235241 235239 &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:14 192.168.56.121 kubelet[1523]: certs</span><br><span class="line">Jul 28 06:56:14 192.168.56.121 kubelet[1523]: &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;pods&#x2F;572f71e5-a97c-4720-974c-bbc09002fad3&#x2F;volumes&#x2F;kubernetes.io~secret&#x2F;certs</span><br><span class="line">Jul 28 06:56:14 192.168.56.121 kubelet[1523]: metrics_cached ?</span><br><span class="line">Jul 28 06:56:14 192.168.56.121 kubelet[1523]: &amp;&#123;2021-07-28 06:46:42.652734769 +0000 UTC m&#x3D;+63.712641961 8192 940964Ki 940956Ki 7 235241 235234 &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:16 192.168.56.121 kubelet[1523]: metrics du &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;pods&#x2F;c8ab6fee-a91e-46fe-b468-71f104af1eac&#x2F;etc-hosts</span><br><span class="line">Jul 28 06:56:16 192.168.56.121 kubelet[1523]: &amp;&#123;2021-07-28 06:56:16.39212959 +0000 UTC m&#x3D;+637.452036755 4096 42954248Ki 37792548Ki 1 20984Ki 21396325 &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: host-dev</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &#x2F;dev</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: metrics not support</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &amp;&#123;0001-01-01 00:00:00 +0000 UTC &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: log-dir</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &#x2F;var&#x2F;log&#x2F;carina</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: metrics not support</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &amp;&#123;0001-01-01 00:00:00 +0000 UTC &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: mountpoint-dir</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;pods</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: metrics not support</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &amp;&#123;0001-01-01 00:00:00 +0000 UTC &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: modules</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &#x2F;lib&#x2F;modules</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: metrics not support</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &amp;&#123;0001-01-01 00:00:00 +0000 UTC &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: host-mount</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &#x2F;run&#x2F;mount</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: metrics not support</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &amp;&#123;0001-01-01 00:00:00 +0000 UTC &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: socket-dir</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;plugins&#x2F;csi.carina.com&#x2F;</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: metrics not support</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &amp;&#123;0001-01-01 00:00:00 +0000 UTC &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: host-sys</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &#x2F;sys&#x2F;fs&#x2F;cgroup</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: metrics not support</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &amp;&#123;0001-01-01 00:00:00 +0000 UTC &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: plugin-dir</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;plugins</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: metrics not support</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &amp;&#123;0001-01-01 00:00:00 +0000 UTC &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: device-plugin</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;device-plugins</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: metrics not support</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &amp;&#123;0001-01-01 00:00:00 +0000 UTC &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt;&#125;</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: registration-dir</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &#x2F;var&#x2F;lib&#x2F;kubelet&#x2F;plugins_registry&#x2F;</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: metrics not support</span><br><span class="line">Jul 28 06:56:20 192.168.56.121 kubelet[1523]: &amp;&#123;0001-01-01 00:00:00 +0000 UTC &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt; &lt;nil&gt;&#125;</span><br></pre></td></tr></table></figure>
+<p>第七步日志分析如下（因为日志较多合并的很多同类型的日志）：</p>
+<table>
+<thead>
+<tr>
+<th>metricsNil</th>
+<th>cacheMetrics</th>
+<th>metricsDu</th>
+<th>metricsStatFs</th>
+<th>metricsCsi</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>/var/lib/kubelet/plugins_registry/<br/>/var/lib/kubelet/device-plugins<br/>/var/lib/kubelet/plugins<br/>/sys/fs/cgroup<br/>/var/lib/kubelet/plugins/<br/>/run/mount<br/>/lib/modules<br/>/var/lib/kubelet/pods<br/>/dev<br/>/run/xtables.lock<br/>/etc/cni/net.d<br/>/var/lib/calico<br/>/opt/cni/bin</td>
+<td>configmap<br/>token<br/>secret</td>
+<td>/var/lib/kubelet/pods/xxx/etc-hosts</td>
+<td>无</td>
+<td>csi volume</td>
+</tr>
+<tr>
+<td>hostpath</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody></table>
+<ul>
+<li>经过分析日志，我们基本确认了哪些目录会采用哪个获取指标的方法，并且观察到CSI创建的volume是通过<code>metricsCsi</code>获取的指标信息</li>
+<li>下边分析查看一个各个指标的实现代码，实际上都挺简单</li>
+</ul>
+<h4 id="第六观察代码："><a href="#第六观察代码：" class="headerlink" title="第六观察代码："></a>第六观察代码：</h4><ul>
+<li><p>cacheMetrics</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// k8s.io/kubernetes/pkg/volume/metrics_cached.go:45</span></span><br><span class="line"><span class="comment">// 这个不就细究了，就是获取一下缓存，通过上边的日志可以看到 token/configmap/secret资源走这个方法</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(md *cachedMetrics)</span> <span class="title">GetMetrics</span><span class="params">()</span> <span class="params">(*Metrics, error)</span></span> &#123;</span><br><span class="line">	md.once.cache(<span class="function"><span class="keyword">func</span><span class="params">()</span> <span class="title">error</span></span> &#123;</span><br><span class="line">		md.resultMetrics, md.resultError = md.wrapped.GetMetrics()</span><br><span class="line">		<span class="keyword">return</span> md.resultError</span><br><span class="line">	&#125;)</span><br><span class="line">	<span class="keyword">return</span> md.resultMetrics, md.resultError</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ul>
+<ul>
+<li><p>metricsDu</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// k8s.io/kubernetes/pkg/volume/metrics_du.go:44</span></span><br><span class="line"><span class="comment">// 这个通过日志观察到，获取所有pod的/var/lib/kubelet/pods/89897880-6cc6-4e57-b22a-77fd647c8a22/etc-hosts文件状态，实际上就是host文件</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(md *metricsDu)</span> <span class="title">GetMetrics</span><span class="params">()</span> <span class="params">(*Metrics, error)</span></span> &#123;</span><br><span class="line">	metrics := &amp;Metrics&#123;Time: metav1.Now()&#125;</span><br><span class="line">	<span class="keyword">if</span> md.path == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> metrics, NewNoPathDefinedError()</span><br><span class="line">	&#125;</span><br><span class="line">    <span class="comment">// 这个就是获取指标的方法，点下去会得到执行的 nice -n 19 du -x -s -B 1 /var/xxxx/etc-hosts这条命令</span></span><br><span class="line">	err := md.runDiskUsage(metrics)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> metrics, err</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	err = md.runFind(metrics)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> metrics, err</span><br><span class="line">	&#125;</span><br><span class="line">    <span class="comment">// 这里使用了 unix.statfs获取文件信息</span></span><br><span class="line">	err = md.getFsInfo(metrics)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> metrics, err</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> metrics, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ul>
+<ul>
+<li><p>metricsCSI</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// k8s.io/kubernetes/pkg/volume/csi/csi_metrics.go:53</span></span><br><span class="line"><span class="comment">// 可以看到这个实际是调用了CSI node服务获取的文件指标信息</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(mc *metricsCsi)</span> <span class="title">GetMetrics</span><span class="params">()</span> <span class="params">(*volume.Metrics, error)</span></span> &#123;</span><br><span class="line">	currentTime := metav1.Now()</span><br><span class="line">	ctx, cancel := context.WithTimeout(context.Background(), csiTimeout)</span><br><span class="line">	<span class="keyword">defer</span> cancel()</span><br><span class="line">	<span class="comment">// Get CSI client</span></span><br><span class="line">	csiClient, err := mc.csiClientGetter.Get()</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">	&#125;</span><br><span class="line">     ...</span><br><span class="line">	<span class="comment">// Get Volumestatus</span></span><br><span class="line">    <span class="comment">// 就是调用的这个方法，等会在看一下各个CSI这个方法的实现</span></span><br><span class="line">	metrics, err := csiClient.NodeGetVolumeStats(ctx, mc.volumeID, mc.targetPath)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">	&#125;</span><br><span class="line">    ...</span><br><span class="line">	<span class="comment">//set recorded time</span></span><br><span class="line">	metrics.Time = currentTime</span><br><span class="line">	<span class="keyword">return</span> metrics, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ul>
+<ul>
+<li><p>metricsStatFS</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// k8s.io/kubernetes/pkg/volume/metrics_statfs.go:43</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(md *metricsStatFS)</span> <span class="title">GetMetrics</span><span class="params">()</span> <span class="params">(*Metrics, error)</span></span> &#123;</span><br><span class="line">	metrics := &amp;Metrics&#123;Time: metav1.Now()&#125;</span><br><span class="line">	<span class="keyword">if</span> md.path == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> metrics, NewNoPathDefinedError()</span><br><span class="line">	&#125;</span><br><span class="line">    <span class="comment">// 这里使用了 unix.statfs获取文件信息，和du那个实现是调用的一个方法</span></span><br><span class="line">	err := md.getFsInfo(metrics)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> metrics, err</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> metrics, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ul>
+<ul>
+<li><p>至此各个获取文件容量指标的方法就告一段落了，最后去各个CSI实现里去确认一下<code>NodeGetVolumeStats</code>的实现</p>
+</li>
+<li><p>Ceph-CSI:<a target="_blank" rel="noopener" href="https://github.com/ceph/ceph-csi.git">https://github.com/ceph/ceph-csi.git</a></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> <span class="string">&quot;k8s.io/kubernetes/pkg/volume&quot;</span></span><br><span class="line"><span class="comment">// github.com/ceph/ceph-csi/internal/csi-common/nodeserver-default.go</span></span><br><span class="line"><span class="comment">// NodeGetVolumeStats returns volume stats.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ns *DefaultNodeServer)</span> <span class="title">NodeGetVolumeStats</span><span class="params">(ctx context.Context, req *csi.NodeGetVolumeStatsRequest)</span> <span class="params">(*csi.NodeGetVolumeStatsResponse, error)</span></span> &#123;</span><br><span class="line">	<span class="keyword">var</span> err error</span><br><span class="line">	targetPath := req.GetVolumePath()</span><br><span class="line">     ...</span><br><span class="line">	isMnt, err := util.IsMountPoint(targetPath)</span><br><span class="line">    <span class="comment">// 看这里 NewMetricsStatFs，在看看上边的import,这就是kubelet获取文件指标的实现，ceph-csi实现引用了它 </span></span><br><span class="line">	cephMetricsProvider := volume.NewMetricsStatFS(targetPath)</span><br><span class="line">	volMetrics, volMetErr := cephMetricsProvider.GetMetrics()</span><br><span class="line">     ...</span><br><span class="line">	<span class="keyword">return</span> &amp;csi.NodeGetVolumeStatsResponse&#123;</span><br><span class="line">		Usage: []*csi.VolumeUsage&#123;</span><br><span class="line">			&#123;</span><br><span class="line">				Available: available,</span><br><span class="line">				Total:     capacity,</span><br><span class="line">				Used:      used,</span><br><span class="line">				Unit:      csi.VolumeUsage_BYTES,</span><br><span class="line">			&#125;,</span><br><span class="line">			&#123;</span><br><span class="line">				Available: inodesFree,</span><br><span class="line">				Total:     inodes,</span><br><span class="line">				Used:      inodesUsed,</span><br><span class="line">				Unit:      csi.VolumeUsage_INODES,</span><br><span class="line">			&#125;,</span><br><span class="line">		&#125;,</span><br><span class="line">	&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+</li>
+</ul>
+<ul>
+<li>NFS-CSI :<a target="_blank" rel="noopener" href="https://github.com/kubernetes-csi/csi-driver-nfs.git">https://github.com/kubernetes-csi/csi-driver-nfs.git</a></li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> <span class="string">&quot;k8s.io/kubernetes/pkg/volume&quot;</span></span><br><span class="line"><span class="comment">// github.com/csi-driver-nfs/pkg/nfs/nodeserver.go:144</span></span><br><span class="line"><span class="comment">// NodeGetVolumeStats get volume stats</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ns *NodeServer)</span> <span class="title">NodeGetVolumeStats</span><span class="params">(ctx context.Context, req *csi.NodeGetVolumeStatsRequest)</span> <span class="params">(*csi.NodeGetVolumeStatsResponse, error)</span></span> &#123;</span><br><span class="line">    ...</span><br><span class="line">    <span class="comment">// 看这里 NewMetricsStatFs，在看看上边的import,这就是kubelet获取文件指标的实现，nfs-csi实现引用了它</span></span><br><span class="line">    <span class="comment">// 和ceph-CSi获取指标的方法，一模一样；互相借鉴的吧！</span></span><br><span class="line">	volumeMetrics, err := volume.NewMetricsStatFS(req.VolumePath).GetMetrics()</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span>, status.Errorf(codes.Internal, <span class="string">&quot;failed to get metrics: %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">    ...</span><br><span class="line">	<span class="keyword">return</span> &amp;csi.NodeGetVolumeStatsResponse&#123;</span><br><span class="line">		Usage: []*csi.VolumeUsage&#123;</span><br><span class="line">			&#123;</span><br><span class="line">				Unit:      csi.VolumeUsage_BYTES,</span><br><span class="line">				Available: available,</span><br><span class="line">				Total:     capacity,</span><br><span class="line">				Used:      used,</span><br><span class="line">			&#125;,</span><br><span class="line">			&#123;</span><br><span class="line">				Unit:      csi.VolumeUsage_INODES,</span><br><span class="line">				Available: inodesFree,</span><br><span class="line">				Total:     inodes,</span><br><span class="line">				Used:      inodesUsed,</span><br><span class="line">			&#125;,</span><br><span class="line">		&#125;,</span><br><span class="line">	&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+<h4 id="第七综述："><a href="#第七综述：" class="headerlink" title="第七综述："></a>第七综述：</h4><ul>
+<li>①我们从Grafana不显示volume容量指标开始，一路追查Prometheus数据源、绕过Kubelet证书认证、跨过kubelet本地调试的坎，然后根据源码层层追查，最终一窥kubelet提供volume指标方法的全貌</li>
+<li>②只有Pod使用中的卷 metrics才会返回其指标，因为kubelet首先获取当前节点上的所有pod，然后再查询其volumeStats</li>
+<li>③CSI驱动提供的存储卷，获取指标实际上是由kubelet调用CSI的<code>NodeGetVolumeStats</code>方法获取的</li>
+<li>④一些内置资源类型，token/configmap/secret通过cachemetrics方法获取指标</li>
+<li>⑤hostpath等等一些主机目录，是不支持获取volume指标的</li>
+<li>⑥metrics du指标只用于获取所有pod的etc-hosts（/var/lib/kubelet/pod/xxxxx/etc-hosts）文件的指标</li>
+<li>⑦metrics statFs该方法在kubelet中并没有只用，但是各个CSI均用该方法获取的volume指标，比如NFS-CSI、Ceph-CSI</li>
+</ul>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+        <div class="post-tags">
+          
+            <a href="/tags/Kubernetes/" rel="tag"># Kubernetes</a>
+          
+            <a href="/tags/storageclass/" rel="tag"># storageclass</a>
+          
+        </div>
+      
+
+      
+      
+        <div class="post-widgets">
+        
+
+        
+
+        
+          
+          <div id="needsharebutton-postbottom">
+            <span class="btn">
+              <i class="fa fa-share-alt" aria-hidden="true"></i>
+            </span>
+          </div>
+        
+        </div>
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2021/06/15/KuberentesEtcd/" rel="next" title="Kubernetes Etcd">
+                <i class="fa fa-chevron-left"></i> Kubernetes Etcd
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2021/07/30/post-name/" rel="prev" title="post_name">
+                post_name <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image"
+                src="/images/avatar.gif"
+                alt="" />
+            
+              <p class="site-author-name" itemprop="name"></p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives%7C%7C%20archive">
+              
+                  <span class="site-state-item-count">7</span>
+                  <span class="site-state-item-name">日志</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">1</span>
+                  <span class="site-state-item-name">分类</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">7</span>
+                  <span class="site-state-item-name">标签</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+            <div class="links-of-author motion-element">
+                
+                  <span class="links-of-author-item">
+                    <a href="https://github.com/antmoveh" target="_blank" title="GitHub">
+                      
+                        <i class="fa fa-fw fa-github"></i>GitHub</a>
+                  </span>
+                
+                  <span class="links-of-author-item">
+                    <a href="mailto:shen.ren.love@163.com" target="_blank" title="E-Mail">
+                      
+                        <i class="fa fa-fw fa-envelope"></i>E-Mail</a>
+                  </span>
+                
+            </div>
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%83%8C%E6%99%AF%EF%BC%9A"><span class="nav-number">1.</span> <span class="nav-text">背景：</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%88%86%E6%9E%90-amp-%E7%A1%AE%E8%AE%A4%EF%BC%9A"><span class="nav-number">2.</span> <span class="nav-text">分析&amp;确认：</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%9F%BA%E6%9C%AC%E6%A6%82%E5%BF%B5%EF%BC%9A"><span class="nav-number">3.</span> <span class="nav-text">基本概念：</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E9%81%93%E5%9D%8E%EF%BC%9A"><span class="nav-number">4.</span> <span class="nav-text">第一道坎：</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E9%81%93%E6%9B%99%E5%85%89%EF%BC%9A"><span class="nav-number">5.</span> <span class="nav-text">第二道曙光：</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E9%81%93%E5%9D%8E%EF%BC%9A"><span class="nav-number">6.</span> <span class="nav-text">第三道坎：</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E5%9B%9B%E9%81%93%E5%9D%8E%EF%BC%9A"><span class="nav-number">7.</span> <span class="nav-text">第四道坎：</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%BA%94%E9%81%93%E6%9B%99%E5%85%89%EF%BC%9A"><span class="nav-number">8.</span> <span class="nav-text">第五道曙光：</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E5%85%AD%E8%A7%82%E5%AF%9F%E4%BB%A3%E7%A0%81%EF%BC%9A"><span class="nav-number">9.</span> <span class="nav-text">第六观察代码：</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%B8%83%E7%BB%BC%E8%BF%B0%EF%BC%9A"><span class="nav-number">10.</span> <span class="nav-text">第七综述：</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">antmoveh</span>
+
+  
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-area-chart"></i>
+    </span>
+    
+      <span class="post-meta-item-text">Site words total count&#58;</span>
+    
+    <span title="Site words total count">19.3k</span>
+  
+</div>
+
+
+
+
+
+<!--
+
+  <div class="theme-info">主题 &mdash; <a class="theme-link" target="_blank" href="https://github.com/iissnan/hexo-theme-next">NexT.Mist</a> v5.1.4</div>
+
+-->
+
+
+
+        
+<div class="busuanzi-count">
+  <script async src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+  
+    <span class="site-uv">
+      访客数
+      <span class="busuanzi-value" id="busuanzi_value_site_uv"></span>
+      人
+    </span>
+  
+
+  
+    <span class="site-pv">
+      总访问量
+      <span class="busuanzi-value" id="busuanzi_value_site_pv"></span>
+      次
+    </span>
+  
+</div>
+
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+          <span id="scrollpercent"><span>0</span>%</span>
+        
+      </div>
+    
+
+    
+      <div id="needsharebutton-float">
+        <span class="btn">
+          <i class="fa fa-share-alt" aria-hidden="true"></i>
+        </span>
+      </div>
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  <script type="text/javascript">
+    // Popup Window;
+    var isfetched = false;
+    var isXml = true;
+    // Search DB path;
+    var search_path = "search.xml";
+    if (search_path.length === 0) {
+      search_path = "search.xml";
+    } else if (/json$/i.test(search_path)) {
+      isXml = false;
+    }
+    var path = "/" + search_path;
+    // monitor main search box;
+
+    var onPopupClose = function (e) {
+      $('.popup').hide();
+      $('#local-search-input').val('');
+      $('.search-result-list').remove();
+      $('#no-result').remove();
+      $(".local-search-pop-overlay").remove();
+      $('body').css('overflow', '');
+    }
+
+    function proceedsearch() {
+      $("body")
+        .append('<div class="search-popup-overlay local-search-pop-overlay"></div>')
+        .css('overflow', 'hidden');
+      $('.search-popup-overlay').click(onPopupClose);
+      $('.popup').toggle();
+      var $localSearchInput = $('#local-search-input');
+      $localSearchInput.attr("autocapitalize", "none");
+      $localSearchInput.attr("autocorrect", "off");
+      $localSearchInput.focus();
+    }
+
+    // search function;
+    var searchFunc = function(path, search_id, content_id) {
+      'use strict';
+
+      // start loading animation
+      $("body")
+        .append('<div class="search-popup-overlay local-search-pop-overlay">' +
+          '<div id="search-loading-icon">' +
+          '<i class="fa fa-spinner fa-pulse fa-5x fa-fw"></i>' +
+          '</div>' +
+          '</div>')
+        .css('overflow', 'hidden');
+      $("#search-loading-icon").css('margin', '20% auto 0 auto').css('text-align', 'center');
+
+      $.ajax({
+        url: path,
+        dataType: isXml ? "xml" : "json",
+        async: true,
+        success: function(res) {
+          // get the contents from search data
+          isfetched = true;
+          $('.popup').detach().appendTo('.header-inner');
+          var datas = isXml ? $("entry", res).map(function() {
+            return {
+              title: $("title", this).text(),
+              content: $("content",this).text(),
+              url: $("url" , this).text()
+            };
+          }).get() : res;
+          var input = document.getElementById(search_id);
+          var resultContent = document.getElementById(content_id);
+          var inputEventFunction = function() {
+            var searchText = input.value.trim().toLowerCase();
+            var keywords = searchText.split(/[\s\-]+/);
+            if (keywords.length > 1) {
+              keywords.push(searchText);
+            }
+            var resultItems = [];
+            if (searchText.length > 0) {
+              // perform local searching
+              datas.forEach(function(data) {
+                var isMatch = false;
+                var hitCount = 0;
+                var searchTextCount = 0;
+                var title = data.title.trim();
+                var titleInLowerCase = title.toLowerCase();
+                var content = data.content.trim().replace(/<[^>]+>/g,"");
+                var contentInLowerCase = content.toLowerCase();
+                var articleUrl = decodeURIComponent(data.url);
+                var indexOfTitle = [];
+                var indexOfContent = [];
+                // only match articles with not empty titles
+                if(title != '') {
+                  keywords.forEach(function(keyword) {
+                    function getIndexByWord(word, text, caseSensitive) {
+                      var wordLen = word.length;
+                      if (wordLen === 0) {
+                        return [];
+                      }
+                      var startPosition = 0, position = [], index = [];
+                      if (!caseSensitive) {
+                        text = text.toLowerCase();
+                        word = word.toLowerCase();
+                      }
+                      while ((position = text.indexOf(word, startPosition)) > -1) {
+                        index.push({position: position, word: word});
+                        startPosition = position + wordLen;
+                      }
+                      return index;
+                    }
+
+                    indexOfTitle = indexOfTitle.concat(getIndexByWord(keyword, titleInLowerCase, false));
+                    indexOfContent = indexOfContent.concat(getIndexByWord(keyword, contentInLowerCase, false));
+                  });
+                  if (indexOfTitle.length > 0 || indexOfContent.length > 0) {
+                    isMatch = true;
+                    hitCount = indexOfTitle.length + indexOfContent.length;
+                  }
+                }
+
+                // show search results
+
+                if (isMatch) {
+                  // sort index by position of keyword
+
+                  [indexOfTitle, indexOfContent].forEach(function (index) {
+                    index.sort(function (itemLeft, itemRight) {
+                      if (itemRight.position !== itemLeft.position) {
+                        return itemRight.position - itemLeft.position;
+                      } else {
+                        return itemLeft.word.length - itemRight.word.length;
+                      }
+                    });
+                  });
+
+                  // merge hits into slices
+
+                  function mergeIntoSlice(text, start, end, index) {
+                    var item = index[index.length - 1];
+                    var position = item.position;
+                    var word = item.word;
+                    var hits = [];
+                    var searchTextCountInSlice = 0;
+                    while (position + word.length <= end && index.length != 0) {
+                      if (word === searchText) {
+                        searchTextCountInSlice++;
+                      }
+                      hits.push({position: position, length: word.length});
+                      var wordEnd = position + word.length;
+
+                      // move to next position of hit
+
+                      index.pop();
+                      while (index.length != 0) {
+                        item = index[index.length - 1];
+                        position = item.position;
+                        word = item.word;
+                        if (wordEnd > position) {
+                          index.pop();
+                        } else {
+                          break;
+                        }
+                      }
+                    }
+                    searchTextCount += searchTextCountInSlice;
+                    return {
+                      hits: hits,
+                      start: start,
+                      end: end,
+                      searchTextCount: searchTextCountInSlice
+                    };
+                  }
+
+                  var slicesOfTitle = [];
+                  if (indexOfTitle.length != 0) {
+                    slicesOfTitle.push(mergeIntoSlice(title, 0, title.length, indexOfTitle));
+                  }
+
+                  var slicesOfContent = [];
+                  while (indexOfContent.length != 0) {
+                    var item = indexOfContent[indexOfContent.length - 1];
+                    var position = item.position;
+                    var word = item.word;
+                    // cut out 100 characters
+                    var start = position - 20;
+                    var end = position + 80;
+                    if(start < 0){
+                      start = 0;
+                    }
+                    if (end < position + word.length) {
+                      end = position + word.length;
+                    }
+                    if(end > content.length){
+                      end = content.length;
+                    }
+                    slicesOfContent.push(mergeIntoSlice(content, start, end, indexOfContent));
+                  }
+
+                  // sort slices in content by search text's count and hits' count
+
+                  slicesOfContent.sort(function (sliceLeft, sliceRight) {
+                    if (sliceLeft.searchTextCount !== sliceRight.searchTextCount) {
+                      return sliceRight.searchTextCount - sliceLeft.searchTextCount;
+                    } else if (sliceLeft.hits.length !== sliceRight.hits.length) {
+                      return sliceRight.hits.length - sliceLeft.hits.length;
+                    } else {
+                      return sliceLeft.start - sliceRight.start;
+                    }
+                  });
+
+                  // select top N slices in content
+
+                  var upperBound = parseInt('1');
+                  if (upperBound >= 0) {
+                    slicesOfContent = slicesOfContent.slice(0, upperBound);
+                  }
+
+                  // highlight title and content
+
+                  function highlightKeyword(text, slice) {
+                    var result = '';
+                    var prevEnd = slice.start;
+                    slice.hits.forEach(function (hit) {
+                      result += text.substring(prevEnd, hit.position);
+                      var end = hit.position + hit.length;
+                      result += '<b class="search-keyword">' + text.substring(hit.position, end) + '</b>';
+                      prevEnd = end;
+                    });
+                    result += text.substring(prevEnd, slice.end);
+                    return result;
+                  }
+
+                  var resultItem = '';
+
+                  if (slicesOfTitle.length != 0) {
+                    resultItem += "<li><a href='" + articleUrl + "' class='search-result-title'>" + highlightKeyword(title, slicesOfTitle[0]) + "</a>";
+                  } else {
+                    resultItem += "<li><a href='" + articleUrl + "' class='search-result-title'>" + title + "</a>";
+                  }
+
+                  slicesOfContent.forEach(function (slice) {
+                    resultItem += "<a href='" + articleUrl + "'>" +
+                      "<p class=\"search-result\">" + highlightKeyword(content, slice) +
+                      "...</p>" + "</a>";
+                  });
+
+                  resultItem += "</li>";
+                  resultItems.push({
+                    item: resultItem,
+                    searchTextCount: searchTextCount,
+                    hitCount: hitCount,
+                    id: resultItems.length
+                  });
+                }
+              })
+            };
+            if (keywords.length === 1 && keywords[0] === "") {
+              resultContent.innerHTML = '<div id="no-result"><i class="fa fa-search fa-5x" /></div>'
+            } else if (resultItems.length === 0) {
+              resultContent.innerHTML = '<div id="no-result"><i class="fa fa-frown-o fa-5x" /></div>'
+            } else {
+              resultItems.sort(function (resultLeft, resultRight) {
+                if (resultLeft.searchTextCount !== resultRight.searchTextCount) {
+                  return resultRight.searchTextCount - resultLeft.searchTextCount;
+                } else if (resultLeft.hitCount !== resultRight.hitCount) {
+                  return resultRight.hitCount - resultLeft.hitCount;
+                } else {
+                  return resultRight.id - resultLeft.id;
+                }
+              });
+              var searchResultList = '<ul class=\"search-result-list\">';
+              resultItems.forEach(function (result) {
+                searchResultList += result.item;
+              })
+              searchResultList += "</ul>";
+              resultContent.innerHTML = searchResultList;
+            }
+          }
+
+          if ('auto' === 'auto') {
+            input.addEventListener('input', inputEventFunction);
+          } else {
+            $('.search-icon').click(inputEventFunction);
+            input.addEventListener('keypress', function (event) {
+              if (event.keyCode === 13) {
+                inputEventFunction();
+              }
+            });
+          }
+
+          // remove loading animation
+          $(".local-search-pop-overlay").remove();
+          $('body').css('overflow', '');
+
+          proceedsearch();
+        }
+      });
+    }
+
+    // handle and trigger popup window;
+    $('.popup-trigger').click(function(e) {
+      e.stopPropagation();
+      if (isfetched === false) {
+        searchFunc(path, 'local-search-input', 'local-search-result');
+      } else {
+        proceedsearch();
+      };
+    });
+
+    $('.popup-btn-close').click(onPopupClose);
+    $('.popup').click(function(e){
+      e.stopPropagation();
+    });
+    $(document).on('keyup', function (event) {
+      var shouldDismissSearchPopup = event.which === 27 &&
+        $('.search-popup').is(':visible');
+      if (shouldDismissSearchPopup) {
+        onPopupClose();
+      }
+    });
+  </script>
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+  
+  <link rel="stylesheet" href="/lib/needsharebutton/needsharebutton.css">
+
+  
+  
+  <script src="/lib/needsharebutton/needsharebutton.js"></script>
+
+  <script>
+    
+      pbOptions = {};
+      
+          pbOptions.iconStyle = "box";
+      
+          pbOptions.boxForm = "horizontal";
+      
+          pbOptions.position = "bottomCenter";
+      
+          pbOptions.networks = "Weibo,Wechat,Douban,QQZone,Twitter,Facebook";
+      
+      new needShareButton('#needsharebutton-postbottom', pbOptions);
+    
+    
+      flOptions = {};
+      
+          flOptions.iconStyle = "box";
+      
+          flOptions.boxForm = "horizontal";
+      
+          flOptions.position = "middleRight";
+      
+          flOptions.networks = "Weibo,Wechat,Douban,QQZone,Twitter,Facebook";
+      
+      new needShareButton('#needsharebutton-float', flOptions);
+    
+  </script>
+
+  
+
+  
+
+  
+
+  
+
+  
+    <canvas class="fireworks" style="position: fixed;left: 0;top: 0;z-index: 1; pointer-events: none;" ></canvas>
+    <script src="//cdn.bootcss.com/animejs/2.2.0/anime.min.js"></script>
+    <script src="/js/cursor/explosion.min.js"></script>
+  
+  
+  <style>
+    .copy-btn {
+      display: inline-block;
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 20px;
+      color: #333;
+      white-space: nowrap;
+      vertical-align: middle;
+      cursor: pointer;
+      background-color: #eee;
+      background-image: linear-gradient(#fcfcfc, #eee);
+      border: 1px solid #d5d5d5;
+      border-radius: 3px;
+      user-select: none;
+      outline: 0;
+    }
+
+    .highlight-wrap .copy-btn {
+      transition: opacity .3s ease-in-out;
+      opacity: 0;
+      padding: 2px 6px;
+      position: absolute;
+      right: 4px;
+      top: 8px;
+    }
+
+    .highlight-wrap:hover .copy-btn,
+    .highlight-wrap .copy-btn:focus {
+      opacity: 1
+    }
+
+    .highlight-wrap {
+      position: relative;
+    }
+  </style>
+  
+  <script>
+    $('.highlight').each(function (i, e) {
+      var $wrap = $('<div>').addClass('highlight-wrap')
+      $(e).after($wrap)
+      $wrap.append($('<button>').addClass('copy-btn').append('复制').on('click', function (e) {
+        var code = $(this).parent().find('.code').find('.line').map(function (i, e) {
+          return $(e).text()
+        }).toArray().join('\n')
+        var ta = document.createElement('textarea')
+        document.body.appendChild(ta)
+        ta.style.position = 'absolute'
+        ta.style.top = '0px'
+        ta.style.left = '0px'
+        ta.value = code
+        ta.select()
+        ta.focus()
+        var result = document.execCommand('copy')
+        document.body.removeChild(ta)
+        
+          if(result)$(this).text('复制成功')
+          else $(this).text('复制失败')
+        
+        $(this).blur()
+      })).on('mouseleave', function (e) {
+        var $b = $(this).find('.copy-btn')
+        setTimeout(function () {
+          $b.text('复制')
+        }, 300)
+      }).append(e)
+    })
+  </script>
+
+</body>
+</html>
