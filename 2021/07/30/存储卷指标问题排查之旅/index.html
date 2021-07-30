@@ -82,11 +82,10 @@
 <meta property="og:description" content="背景： 最近有小伙伴反映，使用存储驱动（比如：NFS-CSI、Ceph-CSI）创建的存储卷，在Grafana看不到其容量指标，并且Prometheus中也收集不到卷容量、使用量等指标 据笔者所知Grafana内置了kubernetes&#x2F;Persistent Volumes指标模板，并且其指标数据来源于kubelet；在此之前笔者并未对kubelet metrics接口进行深入研究过，借此机会探究">
 <meta property="og:locale">
 <meta property="og:image" content="https://antmoveh.github.io/2021/07/30/%E5%AD%98%E5%82%A8%E5%8D%B7%E6%8C%87%E6%A0%87%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5%E4%B9%8B%E6%97%85/kubelet.png">
-<meta property="og:image" content="https://github.com/antmoveh/antmoveh.github.io/blob/main/2021/07/30/%E5%AD%98%E5%82%A8%E5%8D%B7%E6%8C%87%E6%A0%87%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5%E4%B9%8B%E6%97%85/kubelet.png">
-<meta property="og:image" content="d:/img/pvcref.png">
-<meta property="og:image" content="d:/img/metrics.png">
+<meta property="og:image" content="https://antmoveh.github.io/2021/07/30/%E5%AD%98%E5%82%A8%E5%8D%B7%E6%8C%87%E6%A0%87%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5%E4%B9%8B%E6%97%85/pvcref.png">
+<meta property="og:image" content="https://antmoveh.github.io/2021/07/30/%E5%AD%98%E5%82%A8%E5%8D%B7%E6%8C%87%E6%A0%87%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5%E4%B9%8B%E6%97%85/metrics.png">
 <meta property="article:published_time" content="2021-07-30T06:14:44.697Z">
-<meta property="article:modified_time" content="2021-07-30T06:44:47.638Z">
+<meta property="article:modified_time" content="2021-07-30T06:49:23.966Z">
 <meta property="article:author" content="antmoveh">
 <meta property="article:tag" content="Kubernetes">
 <meta property="article:tag" content="storageclass">
@@ -484,7 +483,6 @@
 <li><p>如果要Debug kubelet 首先要启动kubelet并把它加入一个kubernetes集群</p>
 <figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line">第一步：创建一个K8s集群</span><br><span class="line"><span class="meta">$</span><span class="bash"> kubectl get nodes -o wide</span></span><br><span class="line">NAME             STATUS   ROLES                  AGE   VERSION   INTERNAL-IP    </span><br><span class="line">192.168.56.120   Ready    control-plane,master   52m   v1.20.4   192.168.56.120 </span><br><span class="line">192.168.56.121   Ready    &lt;none&gt;                 49m   v1.20.4   192.168.56.121 </span><br><span class="line"></span><br><span class="line">第二步：本地开发环境为ubuntu16，需要做一些配置</span><br><span class="line">① 关闭swapoff -a</span><br><span class="line">② 开启ipv4转发</span><br><span class="line">③ 配置docker cgroupManager为systemd</span><br><span class="line">④ 关闭防火墙 等等</span><br><span class="line">⑤ 设置hostname hostnamectl 192.168.56.101，之所以如此设置是为了让各个节点可以通过hostname直接访问</span><br><span class="line">⑥ 安装kubeadm yum install kubeadm kubelet</span><br><span class="line">第三步：使用kubeadm join命令将开发环境加入集群</span><br><span class="line">kubeadm join 192.168.56.120:6443 --token 4smpu7.uji2fimas85b5fwy     --discovery-token-ca-cert-hash sha256:97de144cb013ba79ce7fc059f418e92a900944ebbba2b51c39c6ecbb08406bf2 </span><br><span class="line"></span><br><span class="line"><span class="meta">$</span><span class="bash"> kubectl get nodes</span></span><br><span class="line">NAME             STATUS   ROLES                  AGE   VERSION</span><br><span class="line">192.168.56.101   Ready    &lt;none&gt;                 11s   v1.21.3</span><br><span class="line">192.168.56.120   Ready    control-plane,master   63m   v1.20.4</span><br><span class="line">192.168.56.121   Ready    &lt;none&gt;                 61m   v1.20.4</span><br><span class="line"></span><br><span class="line">备注①：如果你是重复join，需要先删除/etc/kubernete/* /var/lib/kubelet/* 下的所有文件</span><br><span class="line">备注②：节点上docker的配置的cgroup使用systemd管理，在/var/lib/kubelet/config.yaml中要加入cgroupDriver: systemd配置</span><br><span class="line">备注③：这一步的join操作主要是为了生成节点kubelet证书，笔者曾实验过将其他节点的证书挪到开发环境，发现证书和节点hostname绑定，故使用这种方法生成节点证书</span><br><span class="line">备注④：如果能自定义生成节点证书可以不必这样</span><br><span class="line"></span><br><span class="line">第四步：停止kubelet，启动我们Goland中的kubelet</span><br><span class="line"><span class="meta">$</span><span class="bash"> systemctl stop kubelet &amp;&amp; systemctl <span class="built_in">disable</span> kubelet</span></span><br><span class="line"></span><br><span class="line">Goland的中需要配置一下kubelet main目录，以及启动参数，可以参考下图</span><br><span class="line">/data/gopath/src/k8s.io/kubernetes/cmd/kubelet</span><br><span class="line">--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf</span><br><span class="line">--kubeconfig=/etc/kubernetes/kubelet.conf</span><br><span class="line">--config=/var/lib/kubelet/config.yaml</span><br><span class="line">--network-plugin=cni</span><br><span class="line">--pod-infra-container-image=registry.cn-hangzhou.aliyuncs.com/antmoveh/pause:3.4.1</span><br><span class="line"></span><br><span class="line">启动后，查看集群节点</span><br><span class="line"><span class="meta">$</span><span class="bash"> kubectl get nodes</span></span><br><span class="line">NAME             STATUS     ROLES                  AGE   VERSION</span><br><span class="line">192.168.56.101   Ready      &lt;none&gt;                 12m   v0.0.0-master+$Format:%H$</span><br><span class="line">192.168.56.120   Ready      control-plane,master   75m   v1.20.4</span><br><span class="line">192.168.56.121   Ready      &lt;none&gt;                 73m   v1.20.4</span><br><span class="line"></span><br><span class="line">至此我们就能愉快的debug kubelet了</span><br><span class="line"></span><br><span class="line">备注①：我给Goland分配了16G可用内存，编译起来尚好。配置差些编译时间略长</span><br><span class="line"></span><br></pre></td></tr></table></figure>
 <p><img src="kubelet.png"></p>
-<p><img src="https://github.com/antmoveh/antmoveh.github.io/blob/main/2021/07/30/%E5%AD%98%E5%82%A8%E5%8D%B7%E6%8C%87%E6%A0%87%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5%E4%B9%8B%E6%97%85/kubelet.png"></p>
 </li>
 <li><p>既然我们已经可以Debug kubelet了，我们来解决上一个问题，如何确定方法metrics执行的<code>if pvcRef == nil &#123;continue&#125;</code></p>
 </li>
@@ -493,7 +491,7 @@
 <li><p>一图胜千言，直观感受一下吧，如果细心观察所有的pod的volumeStats PVCRef 其实都是nil</p>
 </li>
 </ul>
-<p><img src="D:\img\pvcref.png"></p>
+<p><img src="pvcref.png"></p>
 <ul>
 <li>那问题就转到pod的pvcRef是如何填充的？</li>
 </ul>
@@ -509,7 +507,7 @@
 <ul>
 <li>metrics的实现有这么多，这获取指标到底走的哪个方法！</li>
 </ul>
-<p><img src="D:\img\metrics.png"></p>
+<p><img src="metrics.png"></p>
 <h4 id="第五道曙光："><a href="#第五道曙光：" class="headerlink" title="第五道曙光："></a>第五道曙光：</h4><ul>
 <li><p>笔者曾试图在ubuntu开发环境部署存储服务进行卷挂载，如果挂载成功通过Debug方式查看到底走的哪个方法，不过遗憾的是笔者的开发环境挂卷存在各种各样问题，这就不得不导致笔者换个思路来验证</p>
 </li>
